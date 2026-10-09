@@ -4,17 +4,21 @@
 // months apart (at different roll angles) line up pixel for pixel.
 
 import { SpherexFile, W, isBadPixel } from '../fits/spherex.js';
-import { tanDeproject } from '../data/sky-math.js';
+import { tanDeproject, tanProject } from '../data/sky-math.js';
 
-const files = new Map(); // url -> Promise<SpherexFile> (headers are tiny; keep them)
+const files = new Map(); // url -> Promise<SpherexFile>, least recently used first
+const MAX_FILES = 300; // ~18 KB of headers and tables each
 
 function openFile(url) {
-  if (!files.has(url)) {
-    const p = new SpherexFile(url).open();
+  let p = files.get(url);
+  if (p) files.delete(url);
+  else {
+    p = new SpherexFile(url).open();
     p.catch(() => files.delete(url));
-    files.set(url, p);
   }
-  return files.get(url);
+  files.set(url, p);
+  if (files.size > MAX_FILES) files.delete(files.keys().next().value);
+  return p;
 }
 
 // Limit concurrent S3 work; browsers allow ~6 connections per host anyway.
@@ -51,12 +55,13 @@ export function clearQueue() {
  * @param {number} o.dec
  * @param {number} o.size    output pixels per side
  * @param {number} o.scale   output arcsec per pixel
+ * @param {boolean} o.samples keep the raw detector samples for the Deep view
  */
 export function makeCutout(o) {
   return schedule(() => cutoutNow(o));
 }
 
-async function cutoutNow({ url, ra, dec, size = 96, scale = 6.15 }) {
+async function cutoutNow({ url, ra, dec, size = 96, scale = 6.15, samples = false }) {
   const f = await openFile(url);
   const N = size;
   const s = scale / 3600;
@@ -133,6 +138,9 @@ async function cutoutNow({ url, ra, dec, size = 96, scale = 6.15 }) {
   }
   const stats = robustStats(data);
   return {
+    samples: samples ? sourceSamples(f, img, flags, y0, y1, xmin, xmax, { ra, dec, s, half, N }) : null,
+    wcs: f.wcs,
+    wave: f._wave,
     url,
     data,
     masked,
@@ -152,6 +160,58 @@ async function cutoutNow({ url, ra, dec, size = 96, scale = 6.15 }) {
     bytes: (y1 - y0 + 1) * W * 4 * (flags ? 2 : 1),
     ...stats,
   };
+}
+
+/**
+ * Every good detector pixel that falls inside the field, with the position of
+ * its center on the output grid (in output pixels). The Deep view drizzles
+ * these from many dithered visits onto a finer grid.
+ */
+function sourceSamples(f, img, flags, y0, y1, xlo, xhi, { ra, dec, s, half, N }) {
+  const x0 = Math.max(1, Math.floor(xlo) - 1);
+  const x1 = Math.min(W, Math.ceil(xhi) + 1);
+  // Map a lattice of detector pixels through the WCS and interpolate between
+  // nodes: the mapping is smooth over a few pixels and this is ~60x cheaper.
+  const STEP = 8;
+  const gw = Math.max(2, Math.ceil((x1 - x0) / STEP) + 1);
+  const gh = Math.max(2, Math.ceil((y1 - y0) / STEP) + 1);
+  const gu = new Float64Array(gw * gh);
+  const gv = new Float64Array(gw * gh);
+  for (let j = 0; j < gh; j++) {
+    for (let i = 0; i < gw; i++) {
+      const [r, d] = f.wcs.pixToSky(x0 + i * STEP, y0 + j * STEP);
+      const p = tanProject(ra, dec, r, d);
+      gu[j * gw + i] = p ? half - p[0] / s : NaN;
+      gv[j * gw + i] = p ? half - p[1] / s : NaN;
+    }
+  }
+  const cap = (x1 - x0 + 1) * (y1 - y0 + 1);
+  const u = new Float32Array(cap);
+  const v = new Float32Array(cap);
+  const val = new Float32Array(cap);
+  let n = 0;
+  for (let y = y0; y <= y1; y++) {
+    const ty = (y - y0) / STEP;
+    const j0 = Math.min(gh - 2, Math.floor(ty));
+    const fy = ty - j0;
+    for (let x = x0; x <= x1; x++) {
+      const idx = (y - y0) * W + x - 1;
+      const value = img[idx];
+      if (value !== value || (flags && isBadPixel(flags[idx]))) continue;
+      const tx = (x - x0) / STEP;
+      const i0 = Math.min(gw - 2, Math.floor(tx));
+      const fx = tx - i0;
+      const a = j0 * gw + i0;
+      const uu = (1 - fy) * ((1 - fx) * gu[a] + fx * gu[a + 1]) + fy * ((1 - fx) * gu[a + gw] + fx * gu[a + gw + 1]);
+      const vv = (1 - fy) * ((1 - fx) * gv[a] + fx * gv[a + 1]) + fy * ((1 - fx) * gv[a + gw] + fx * gv[a + gw + 1]);
+      if (!(uu > -1.5 && uu < N + 0.5 && vv > -1.5 && vv < N + 0.5)) continue;
+      u[n] = uu;
+      v[n] = vv;
+      val[n] = value;
+      n++;
+    }
+  }
+  return { u: u.slice(0, n), v: v.slice(0, n), val: val.slice(0, n), n };
 }
 
 /** Median background and MAD-based noise of finite pixels. */

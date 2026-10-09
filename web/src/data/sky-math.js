@@ -86,35 +86,46 @@ export function equatorialToEcliptic(ra, dec) {
 }
 
 export function formatRa(ra) {
-  const h = ra / 15;
-  const hh = Math.floor(h);
-  const m = (h - hh) * 60;
-  const mm = Math.floor(m);
-  const ss = (m - mm) * 60;
+  // Round once, in tenths of a second of time, so 59.96s carries to the minute.
+  const t = Math.round(((((ra % 360) + 360) % 360) / 15) * 36000) % 864000;
+  const hh = Math.floor(t / 36000);
+  const mm = Math.floor((t % 36000) / 600);
+  const ss = (t % 600) / 10;
   return `${String(hh).padStart(2, '0')}h ${String(mm).padStart(2, '0')}m ${ss.toFixed(1).padStart(4, '0')}s`;
 }
 
 export function formatDec(dec) {
-  const s = dec < 0 ? '−' : '+';
-  const a = Math.abs(dec);
-  const dd = Math.floor(a);
-  const m = (a - dd) * 60;
-  const mm = Math.floor(m);
-  const ss = (m - mm) * 60;
-  return `${s}${String(dd).padStart(2, '0')}° ${String(mm).padStart(2, '0')}′ ${ss.toFixed(0).padStart(2, '0')}″`;
+  const t = Math.round(Math.abs(dec) * 3600);
+  const s = dec < 0 && t > 0 ? '−' : '+';
+  const dd = Math.floor(t / 3600);
+  const mm = Math.floor((t % 3600) / 60);
+  const ss = t % 60;
+  return `${s}${String(dd).padStart(2, '0')}° ${String(mm).padStart(2, '0')}′ ${String(ss).padStart(2, '0')}″`;
 }
 
 /** Parse "ra dec" in degrees or sexagesimal ("05 35 17.3 -05 23 28"). */
 export function parseCoords(text) {
-  const t = text.trim().replace(/[hmsd°′″'":,]/g, ' ').replace(/\s+/g, ' ');
-  const nums = t.split(' ').map(Number);
-  if (nums.some((n) => Number.isNaN(n))) return null;
-  if (nums.length === 2) return [((nums[0] % 360) + 360) % 360, nums[1]];
+  // Accept the typographic minus and dashes this app prints, and unit marks.
+  const t = text
+    .replace(/[−–—]/g, '-')
+    .replace(/[hmsd°′″'":,]/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+  if (!t) return null;
+  const parts = t.split(' ');
+  const nums = parts.map(Number);
+  if (nums.some((n) => !Number.isFinite(n))) return null;
+  if (nums.length === 2) {
+    if (Math.abs(nums[1]) > 90) return null;
+    return [((nums[0] % 360) + 360) % 360, nums[1]];
+  }
   if (nums.length === 6) {
-    const ra = (nums[0] + nums[1] / 60 + nums[2] / 3600) * 15;
-    const neg = /-|−/.test(text.split(/\s+/).slice(3).join(' ')) || Object.is(nums[3], -0) || nums[3] < 0;
-    const dec = Math.abs(nums[3]) + nums[4] / 60 + nums[5] / 3600;
-    return [ra, neg ? -dec : dec];
+    const [h, m, s, d, dm, ds] = nums;
+    if (h < 0 || h >= 24 || m < 0 || m >= 60 || s < 0 || s >= 60 || dm < 0 || dm >= 60 || ds < 0 || ds >= 60) return null;
+    const ra = (h + m / 60 + s / 3600) * 15;
+    const dec = Math.abs(d) + dm / 60 + ds / 3600;
+    if (dec > 90) return null;
+    return [ra, parts[3].startsWith('-') ? -dec : dec];
   }
   return null;
 }

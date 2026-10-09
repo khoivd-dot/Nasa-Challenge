@@ -8,9 +8,14 @@ import { angularDistance } from '../data/sky-math.js';
 
 export const PLANETS = ['Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto'];
 
-/** Geocentric astrometric J2000 RA/Dec (deg) of a body at an MJD (UTC). */
+/**
+ * Geocentric astrometric J2000 RA/Dec (deg) of a body at an MJD (UTC). Light
+ * time is included but not aberration: image WCS is fitted to catalog stars,
+ * which aberration shifts the same way. On real SPHEREx frames this puts Pluto
+ * within ~1.5″ of its measured centroid (with aberration it was off by 5-10″).
+ */
 export function bodyRaDec(body, mjd) {
-  const v = Astronomy.GeoVector(body, mjdToDate(mjd), true);
+  const v = Astronomy.GeoVector(body, mjdToDate(mjd), false);
   const eq = Astronomy.EquatorFromVector(v);
   return [eq.ra * 15, eq.dec, eq.dist];
 }
@@ -61,7 +66,7 @@ export function planetsInField(ra, dec, mjd, radius) {
 /** Geocentric J2000 positions of Jupiter's four Galilean moons. */
 export function jupiterMoons(mjd) {
   const date = mjdToDate(mjd);
-  const jup = Astronomy.GeoVector('Jupiter', date, true);
+  const jup = Astronomy.GeoVector('Jupiter', date, false);
   const moons = Astronomy.JupiterMoons(date);
   return [
     ['Io', moons.io],

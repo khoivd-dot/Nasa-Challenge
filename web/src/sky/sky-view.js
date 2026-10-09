@@ -90,7 +90,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
       <p>Your browser or device does not provide WebGL2, so the interactive SPHEREx coverage map cannot be drawn.
       Try a recent Chrome, Edge, Firefox or Safari, or enable hardware acceleration.</p>`;
     view.appendChild(msg);
-    return { pause() {}, resume() {}, setTime() {}, flyTo() {} };
+    return { pause() {}, resume() {}, setTime() {}, flyTo() {}, destroy: () => view.remove() };
   }
 
   const overlay = document.createElement('canvas');
@@ -283,7 +283,11 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
   let W = 1;
   let H = 1;
   let dpr = 1;
+  let hidden = false; // display: none (another view is showing)
   function layout() {
+    // Keep the last size while hidden; the ResizeObserver lays out again when shown.
+    hidden = !view.clientWidth || !view.clientHeight;
+    if (hidden && W > 1) return;
     W = view.clientWidth || root.clientWidth || window.innerWidth;
     H = view.clientHeight || root.clientHeight || window.innerHeight;
     dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -313,13 +317,32 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
   }
   const resizeObs = new ResizeObserver(() => {
     layout();
+    if (hidden) return;
     measureAvoid();
+    if (state.paused) return;
+    // The loop stops while hidden (frame()); pick it up again once shown.
+    start();
+    // Resizing clears both canvases and this runs after the frame's draw:
+    // redraw now so the resize does not paint a blank frame.
+    if (!renderer.lost) draw(performance.now(), state.time - mjd0, upperBound(fp.t, state.time - mjd0));
   });
   resizeObs.observe(view);
   resizeObs.observe(hud.querySelector('.sky-controls'));
   resizeObs.observe(tm.el);
   layout();
   measureAvoid();
+  // devicePixelRatio can change without a resize (window dragged to another screen).
+  let dprQuery = null;
+  function watchDpr() {
+    dprQuery?.removeEventListener('change', onDprChange);
+    dprQuery = window.matchMedia?.(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    dprQuery?.addEventListener('change', onDprChange);
+  }
+  function onDprChange() {
+    layout();
+    watchDpr();
+  }
+  watchDpr();
 
   // ---------------------------------------------------------- controls ----
   function stopAuto() {
@@ -337,6 +360,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
   }
 
   function setTimeInternal(mjd) {
+    if (!Number.isFinite(mjd)) return; // NaN would stick and break every later frame
     state.time = Math.max(tMin, Math.min(tMax, mjd));
     tm.setTime(state.time);
     needsRender = true;
@@ -431,6 +455,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
   let hoverDirty = false;
 
   canvas.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return; // right/middle click: leave the context menu alone, never pick
     canvas.focus({ preventScroll: true });
     canvas.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
@@ -498,7 +523,8 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
     const dx = e.offsetX - drag.x;
     const dy = e.offsetY - drag.y;
     const dt = Math.max(1, now - drag.t) / 1000;
-    if (Math.hypot(e.offsetX - drag.x0, e.offsetY - drag.y0) > 5) drag.moved = true;
+    // Fingers jitter more than a mouse; a tap must still count as a click.
+    if (Math.hypot(e.offsetX - drag.x0, e.offsetY - drag.y0) > (e.pointerType === 'touch' ? 10 : 5)) drag.moved = true;
     if (!drag.moved) return;
     drag.x = e.offsetX;
     drag.y = e.offsetY;
@@ -560,6 +586,9 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
   };
   canvas.addEventListener('pointerup', endPointer);
   canvas.addEventListener('pointercancel', endPointer);
+  // Capture is also lost when the view is hidden mid-gesture; the pointerup then
+  // never reaches the canvas and a stale touch would turn the next drag into a pinch.
+  canvas.addEventListener('lostpointercapture', endPointer);
   canvas.addEventListener('pointerleave', (e) => {
     if (e.pointerType === 'mouse' && !pointers.size) {
       hover = null;
@@ -609,7 +638,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
       case ' ':
       case 'Spacebar':
         if (tag === 'BUTTON') return;
-        togglePlay();
+        if (!e.repeat) togglePlay(); // holding space must not flicker play/pause
         break;
       case 'ArrowLeft':
       case 'ArrowRight':
@@ -709,7 +738,9 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
       inline();
     }
     function inline() {
-      import('./coverage.js').then(({ computeCoverage }) => setTimeout(() => done(computeCoverage(fp.data, fp.count)), 50));
+      import('./coverage.js')
+        .then(({ computeCoverage }) => setTimeout(() => done(computeCoverage(fp.data, fp.count)), 50))
+        .catch((e) => console.warn('[sky] coverage unavailable', e));
     }
   }
 
@@ -802,10 +833,18 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
   }
 
   function frame(now) {
+    // Hidden (e.g. resume() raced a navigation away): stop; the ResizeObserver restarts us.
+    if (hidden) {
+      raf = 0;
+      return;
+    }
     raf = requestAnimationFrame(frame);
     const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
     last = now;
-    if (renderer.lost) return;
+    if (renderer.lost) {
+      needsRender = true; // repaint everything once the context is restored
+      return;
+    }
     let dirty = needsRender;
     needsRender = false;
 
@@ -935,7 +974,10 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
       stop();
       window.removeEventListener('keydown', onKey);
       resizeObs.disconnect();
+      dprQuery?.removeEventListener('change', onDprChange);
       tm.destroy();
+      // Free the GPU memory (the cube map alone is up to 48 MB) now rather than at GC.
+      renderer.gl.getExtension('WEBGL_lose_context')?.loseContext();
       view.remove();
     },
   };

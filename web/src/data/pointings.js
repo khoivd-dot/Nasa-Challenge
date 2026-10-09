@@ -18,20 +18,38 @@ let cache;
 
 export async function loadPointings(base = import.meta.env.BASE_URL) {
   if (cache) return cache;
+  const get = (url, kind) =>
+    fetch(url).then((r) => {
+      if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
+      return r[kind]();
+    });
   cache = (async () => {
-    const [meta, buf] = await Promise.all([
-      fetch(`${base}data/pointings.json`).then((r) => r.json()),
-      fetch(`${base}data/pointings.bin`).then((r) => r.arrayBuffer()),
-    ]);
+    const [meta, buf] = await Promise.all([get(`${base}data/pointings.json`, 'json'), get(`${base}data/pointings.bin`, 'arrayBuffer')]);
     return new Pointings(meta, buf);
   })();
+  // A failed load (offline, mid-deploy) can be retried later.
+  cache.catch(() => (cache = null));
   return cache;
 }
 
+// Archive folder names become file URLs: accept only the archive's own shape.
+const FOLDER_RE = /^qr\d+\/level2\/\d{4}W\d{2}_\w{2}\/[\w.-]+$/;
+
 export class Pointings {
   constructor(meta, buf) {
+    const n = meta?.count;
+    const ok =
+      Number.isInteger(n) &&
+      n > 0 &&
+      buf.byteLength === 25 * n &&
+      Array.isArray(meta.folders) &&
+      meta.folders.every((f) => typeof f === 'string' && FOLDER_RE.test(f)) &&
+      meta.detectors?.['2'] &&
+      meta.detectors?.['3'] &&
+      meta.columns?.every((c) => Number.isInteger(c.offset) && c.offset >= 0 && c.offset <= buf.byteLength);
+    if (!ok) throw new Error('The SPHEREx pointing index is damaged.');
     this.meta = meta;
-    const n = (this.count = meta.count);
+    this.count = n;
     const col = Object.fromEntries(meta.columns.map((c) => [c.name, c.offset]));
     const f32 = (o) => new Float32Array(buf.slice(o, o + 4 * n));
     this.t = f32(col.t); // days since meta.mjd0
@@ -41,6 +59,7 @@ export class Pointings {
     this.pc = new Float32Array(4 * n);
     for (let i = 0; i < 4 * n; i++) this.pc[i] = pc[i] * meta.pcScale;
     this.folder = new Uint16Array(buf.slice(col.folder, col.folder + 2 * n));
+    if (this.folder.some((k) => k >= meta.folders.length)) throw new Error('The SPHEREx pointing index is damaged.');
     this.exp = new Uint16Array(buf.slice(col.exp, col.exp + 2 * n));
     this.mask = new Uint8Array(buf.slice(col.mask, col.mask + n));
     this.mjd0 = meta.mjd0;
@@ -86,11 +105,21 @@ export class Pointings {
     return [(p[3] * xi - p[1] * eta) / det + CRPIX, (-p[2] * xi + p[0] * eta) / det + CRPIX];
   }
 
+  /**
+   * The index stores the WCS of the first sub-exposure that exists for each
+   * pointing (the lowest bit of its mask), not always sub-exposure 1.
+   */
+  firstSub(i) {
+    const m = this.mask[i];
+    return m ? 32 - Math.clz32(m & -m) : 1;
+  }
+
   /** Sky corners [[ra,dec] x4] of detector d (1-3) for sub-exposure s (1-4). */
-  corners(i, d = 1, s = 1) {
+  corners(i, d = 1, s = this.firstSub(i)) {
     const [cx, cy] = this.detCenter[d];
-    const ox = cx + (s - 1) * SUB_STEP[0];
-    const oy = cy + (s - 1) * SUB_STEP[1];
+    const s0 = this.firstSub(i);
+    const ox = cx + (s - s0) * SUB_STEP[0];
+    const oy = cy + (s - s0) * SUB_STEP[1];
     const h = DET_SIZE / 2;
     return [
       [ox - h, oy - h],
@@ -143,12 +172,13 @@ export class Pointings {
       if (dot < cosLimit) continue;
       const px = this.skyToPixel(i, tra, tdec);
       if (!px) continue;
+      const s0 = this.firstSub(i);
       for (let d = 1; d <= 3; d++) {
         const [cx, cy] = this.detCenter[d];
         for (let s = 1; s <= 4; s++) {
           if (!(this.mask[i] & (1 << (s - 1)))) continue;
-          const x = px[0] - (cx - CRPIX) - (s - 1) * SUB_STEP[0];
-          const y = px[1] - (cy - CRPIX) - (s - 1) * SUB_STEP[1];
+          const x = px[0] - (cx - CRPIX) - (s - s0) * SUB_STEP[0];
+          const y = px[1] - (cy - CRPIX) - (s - s0) * SUB_STEP[1];
           if (x > margin && x < DET_SIZE - margin && y > margin && y < DET_SIZE - margin) {
             out.push({ i, det: d, sub: s, x, y, mjd, ra: tra, dec: tdec });
           }

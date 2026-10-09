@@ -193,11 +193,13 @@ export function residual(z, median, N, block = 12) {
  * Static sky in grey, plus everything that is brighter than the median in a
  * given frame painted in that frame's time color: movers become rainbow trails.
  */
-export function paintTrails(img, zs, median, opts, { threshold = 4, colors, N } = {}) {
+export function paintTrails(img, zs, median, opts, { threshold = 4, colors, N, res } = {}) {
   const px = img.data;
   const n = median.length;
   const side = N || Math.round(Math.sqrt(n));
-  const res = zs.map((z) => residual(z, median, side));
+  // Residuals depend only on the frames: callers may pass them in so that a
+  // contrast change only repaints.
+  res ??= zs.map((z) => residual(z, median, side));
   for (let k = 0; k < n; k++) {
     const base = stretch(median[k], opts);
     let r = base < 0 ? NAN_RGB[0] : 200 * base;

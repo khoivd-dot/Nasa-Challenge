@@ -13,35 +13,53 @@ import { createShell } from './ui/shell.js';
 const app = document.getElementById('app');
 const shell = createShell(app);
 const pointingsReady = loadPointings();
+pointingsReady.then(
+  (P) => shell.setIndex(P),
+  (err) => {
+    console.error(err);
+    const note = document.createElement('div');
+    note.className = 'load-error glass';
+    note.setAttribute('role', 'alert');
+    note.textContent = 'Could not load the index of SPHEREx pointings. Check your connection and reload the page.';
+    document.body.append(note);
+  },
+);
 
 let sky = null;
 let lab = null;
+let current = 'sky';
 
 async function showSky() {
+  current = 'sky';
   shell.setView('sky');
   if (!sky) {
     const { mountSkyView } = await import('./sky/sky-view.js');
-    const pointings = await pointingsReady;
+    const pointings = await pointingsReady.catch(() => null);
+    if (!pointings) return;
     sky = mountSkyView(shell.views.sky, {
       pointings,
       onPick: (ra, dec) => go({ view: 'lab', ra, dec }),
     });
     shell.mountStories(shell.views.sky, (story) => go({ view: 'lab', story: story.id }));
   }
-  sky.resume?.();
+  // The user may have moved on while the sky map was loading.
+  if (current === 'sky') sky.resume?.();
+  else sky.pause?.();
 }
 
 async function showLab(params) {
+  current = 'lab';
   shell.setView('lab');
   sky?.pause?.();
   if (!lab) {
     const { mountLab } = await import('./lab/lab.js');
     lab = mountLab(shell.views.lab, { pointingsReady, onBack: () => go({ view: 'sky' }) });
   }
-  lab.open(params);
+  lab.open(params).catch((err) => console.error('Could not open the Lab:', err));
 }
 
 function showAbout() {
+  current = 'about';
   shell.setView('about');
   sky?.pause?.();
 }

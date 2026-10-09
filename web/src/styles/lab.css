@@ -314,6 +314,80 @@
   margin-left: 6px;
 }
 
+.lab-deep-legend {
+  width: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.lab-deep-legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.lab-deep-legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.lab-deep-legend b {
+  margin-left: auto;
+  padding-left: 8px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.lab-spectrum-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11.5px;
+  margin-bottom: 4px;
+}
+.lab-spectrum-head .btn.icon {
+  width: 24px;
+  height: 24px;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+.lab-spectrum-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.lab-spectrum-svg text {
+  fill: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+}
+.lab-spectrum-svg .unit {
+  fill: var(--text-3);
+}
+.lab-spectrum-svg .grid {
+  stroke: rgba(150, 170, 255, 0.1);
+}
+.lab-spectrum-svg .axis,
+.lab-spectrum-svg .tick {
+  stroke: rgba(180, 195, 255, 0.45);
+}
+.lab-spectrum-svg .zero {
+  stroke: rgba(255, 255, 255, 0.28);
+  stroke-dasharray: 3 3;
+}
+.lab-spectrum-svg .err {
+  stroke: rgba(230, 235, 255, 0.5);
+}
+.lab-spectrum-svg circle:not([fill="none"]) {
+  stroke: rgba(4, 5, 11, 0.9);
+  stroke-width: 1;
+}
+.lab-spectrum-note {
+  font-size: 11.5px;
+  margin-top: 6px;
+}
+
 .lab-empty {
   position: absolute;
   inset: 0;
@@ -470,6 +544,32 @@
     grid-template-columns: 300px minmax(0, 1fr);
   }
   .lab-inspect {
+    display: none;
+  }
+}
+
+/* Laptop widths hide the inspector: bring the spectrum back under the side
+   panel once someone clicks a spot. */
+@media (max-width: 1280px) and (min-width: 861px) {
+  .lab {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .lab-side {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .lab-main {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+  .lab.probing .lab-inspect {
+    display: flex;
+    grid-column: 1;
+    grid-row: 2;
+    max-height: 48vh;
+    padding-top: 0;
+  }
+  .lab.probing .lab-inspect > .lab-block:not(.lab-spectrum-block) {
     display: none;
   }
 }

@@ -5,16 +5,19 @@
 
 import '../styles/lab.css';
 import { formatRa, formatDec, tanProject, tanDeproject, parseCoords, equatorialToGalactic } from '../data/sky-math.js';
-import { mjdToDate } from '../data/pointings.js';
+import { mjdToDate, S3 } from '../data/pointings.js';
+import { esc } from '../ui/esc.js';
 import { TARGETS, searchTargets } from '../data/targets.js';
 import { surveyLabel, surveyColorVar } from '../data/survey.js';
 import { makeCutout, clearQueue } from './cutout.js';
 import { onePerPointing, groupPasses, pickFrames, surveyNumber } from './visits.js';
-import { normalize, paintFrame, paintDifference, paintTrails, medianStack, timeColor, COLORMAPS } from './render.js';
+import { normalize, paintFrame, paintDifference, paintTrails, medianStack, residual, timeColor, COLORMAPS } from './render.js';
 import { findMovers, classifyRate } from './movers.js';
-import { bodyTrack, starTrack, planetsInField, jupiterMoons } from './ephem.js';
+import { bodyTrack, starTrack, planetsInField, jupiterMoons, PLANETS } from './ephem.js';
 import { STORIES, storyById } from './stories.js';
 import { queryKnownObjects } from './skybot.js';
+import { drizzle, paintColor } from './deep.js';
+import { lookupWave } from '../fits/spherex.js';
 
 const SIZES = [
   { px: 64, label: '6′' },
@@ -23,6 +26,15 @@ const SIZES = [
 ];
 const SCALE = 6.15; // arcsec per output pixel (SPHEREx native)
 const BUDGET = 24;
+const LOAD_MAX = 240; // "Load every visit" stops here: ~1 MB and a canvas per frame
+const APERTURE = [2, 4, 7]; // spectrum aperture radius, then its background ring (pixels)
+const MJY_PER_PIXEL = (SCALE / 206264.806) ** 2 * 1e9; // one pixel of 1 MJy/sr, in mJy
+const DEEP_MAX = 64; // visits that keep their raw detector samples for the Deep view
+// SPHEREx detector pairs: which slice of the spectrum each one sees (µm).
+const BANDS = {
+  sw: [['D1', 0.75, 1.1], ['D2', 1.1, 1.6], ['D3', 1.6, 2.4]],
+  lw: [['D4', 2.4, 3.8], ['D5', 3.8, 4.4], ['D6', 4.4, 5.0]],
+};
 
 const fmtDate = (mjd) => mjdToDate(mjd).toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
 const fmtDay = (mjd) => mjdToDate(mjd).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
@@ -95,6 +107,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
           <label class="lab-slider"><span>Contrast</span><input type="range" min="10" max="600" value="120" data-ctl="max" /></label>
           <label class="lab-slider"><span>Background</span><input type="range" min="-4" max="4" step="0.1" value="-1.5" data-ctl="black" /></label>
           <label class="lab-check"><input type="checkbox" data-ctl="smooth" /> Smooth pixels</label>
+          <label class="lab-check"><input type="checkbox" data-ctl="coordGrid" /> RA/Dec grid</label>
         </section>
         <section class="lab-block lab-stream">
           <div class="label">Live from NASA</div>
@@ -112,6 +125,16 @@ export function mountLab(root, { pointingsReady, onBack }) {
           <button data-val="compare" aria-pressed="false" title="Compare two dates (C)">Compare</button>
           <button data-val="trails" aria-pressed="false" title="Color = time; static stars stay white (T)">Trails</button>
           <button data-val="grid" aria-pressed="false" title="All frames side by side (G)">Grid</button>
+          <button data-val="deep" aria-pressed="false" title="Stack every visit into one sharper, deeper image (S)">Deep</button>
+        </div>
+        <div class="seg lab-deep" data-group="deepColor" hidden>
+          <button data-val="color" aria-pressed="true" title="Short, middle and long wavelengths as blue, green and red">IR color</button>
+          <button data-val="mono" aria-pressed="false" title="All wavelengths together, in the Display colormap">Mono</button>
+        </div>
+        <div class="seg lab-detail" data-group="detail" hidden>
+          <button data-val="1" aria-pressed="false" title="Native 6.15″ pixels">1×</button>
+          <button data-val="2" aria-pressed="true" title="3.1″ pixels">2×</button>
+          <button data-val="3" aria-pressed="false" title="2.05″ pixels">3×</button>
         </div>
         <div class="seg lab-compare" data-group="cmp" hidden>
           <button data-val="flip" aria-pressed="true">Flip</button>
@@ -155,6 +178,10 @@ export function mountLab(root, { pointingsReady, onBack }) {
         <div class="label">Cursor</div>
         <dl class="lab-dl lab-cursor-dl"><dt>Point at the image</dt><dd></dd></dl>
       </section>
+      <section class="lab-block lab-spectrum-block">
+        <div class="label">Spectrum</div>
+        <div class="lab-spectrum"><p class="muted">Click any star or galaxy to measure its brightness in every loaded visit. Each visit sees a slightly different color, so together they trace its infrared spectrum.</p></div>
+      </section>
       <section class="lab-block lab-movers-block">
         <div class="label">Moving objects</div>
         <div class="lab-movers"><p class="muted">Press <span class="kbd">M</span> or “Find movers” to search the loaded frames for anything that moves in a straight line.</p></div>
@@ -169,7 +196,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
       </section>
       <section class="lab-block lab-keys">
         <div class="label">Keys</div>
-        <p class="muted"><span class="kbd">Space</span> play · <span class="kbd">←</span><span class="kbd">→</span> step · <span class="kbd">B</span><span class="kbd">C</span><span class="kbd">T</span><span class="kbd">G</span> modes · <span class="kbd">A</span> set compare base · <span class="kbd">+</span><span class="kbd">−</span> zoom</p>
+        <p class="muted"><span class="kbd">Space</span> play · <span class="kbd">←</span><span class="kbd">→</span> step · <span class="kbd">B</span><span class="kbd">C</span><span class="kbd">T</span><span class="kbd">G</span><span class="kbd">S</span> modes · <span class="kbd">A</span> set compare base · <span class="kbd">+</span><span class="kbd">−</span> zoom · click: spectrum</p>
       </section>
     </aside>
   </div>`;
@@ -204,6 +231,9 @@ export function mountLab(root, { pointingsReady, onBack }) {
     trackBlock: $('.lab-track-block'),
     fixedPasses: $('.lab-fixed-passes'),
     compareSeg: $('.lab-compare'),
+    deepSeg: $('.lab-deep'),
+    detailSeg: $('.lab-detail'),
+    spectrum: $('.lab-spectrum'),
     search: $('.lab-search input'),
     suggest: $('.lab-suggest'),
   };
@@ -225,7 +255,11 @@ export function mountLab(root, { pointingsReady, onBack }) {
     cmp: 'flip',
     playing: false,
     fps: 3,
-    display: { cmap: 'gray', max: 120, black: -1.5, soft: 3, smooth: false },
+    display: { cmap: 'gray', max: 120, black: -1.5, soft: 3, smooth: false, coordGrid: false },
+    deepColor: 'color',
+    detail: 2,
+    deepCache: null,
+    probe: null, // {ra, dec} on the sky, or {x, y} in frame pixels when tracking a moving body
     view: { zoom: 1, x: 0, y: 0 },
     swipe: 0.5,
     movers: null,
@@ -237,6 +271,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
     renderVersion: 0,
     trailsCache: null,
     allLoaded: false,
+    reuse: new Map(),
   };
   let P = null;
 
@@ -247,14 +282,18 @@ export function mountLab(root, { pointingsReady, onBack }) {
       const base = story.body ? bodyTarget(story.body) : starTarget(TARGETS.find((t) => t.id === story.target));
       return { ...base, story, size: story.size, trackMode: story.mode || 'track' };
     }
-    if (params.body) return bodyTarget(params.body);
+    // Links can be edited by hand: accept only known bodies and sane coordinates.
+    const body = params.body && PLANETS.find((b) => b.toLowerCase() === String(params.body).toLowerCase());
+    if (body) return bodyTarget(body);
     if (params.target) {
       const t = TARGETS.find((x) => x.id === params.target);
       if (t) return starTarget(t);
     }
-    const ra = Number.isFinite(params.ra) ? params.ra : 83.8221;
-    const dec = Number.isFinite(params.dec) ? params.dec : -5.3911;
-    return { name: params.name || 'Sky position', kicker: 'Your pick', ra, dec, track: null };
+    const ok = Number.isFinite(params.ra) && Number.isFinite(params.dec) && Math.abs(params.dec) <= 90;
+    const ra = ok ? ((params.ra % 360) + 360) % 360 : 83.8221;
+    const dec = ok ? params.dec : -5.3911;
+    const name = typeof params.name === 'string' && params.name.trim() ? params.name.trim().slice(0, 60) : 'Sky position';
+    return { name, kicker: 'Your pick', ra, dec, track: null };
   }
 
   function bodyTarget(body) {
@@ -282,9 +321,10 @@ export function mountLab(root, { pointingsReady, onBack }) {
     const session = ++S.session;
     clearQueue();
     stop();
+    S.frames = []; // a new target shares no frames with the last one
     const target = resolve(params);
     S.target = target;
-    S.size = target.size || (params.size ? +params.size : 112);
+    S.size = target.size || SIZES.find((s) => s.px === +params.size)?.px || 112;
     S.trackMode = target.trackMode || 'track';
     S.fixedPass = 'best';
     S.autoplay = !!target.story?.autoplay;
@@ -296,12 +336,23 @@ export function mountLab(root, { pointingsReady, onBack }) {
     S.allLoaded = false;
     renderHeader();
     syncSegs();
-    await search(session, BUDGET);
+    try {
+      await search(session, BUDGET);
+    } catch (err) {
+      if (session !== S.session) return;
+      console.error(err);
+      showEmpty('Something went wrong opening this view. Try another target or reload the page.', false);
+    }
   }
 
   async function search(session, budget) {
     const t = S.target;
+    // Drop downloads queued for the previous search before starting this one,
+    // but keep frames already in hand (e.g. for "Load every visit").
+    clearQueue();
+    S.reuse = new Map(S.frames.map((f) => [`${f.frame.url}|${f.center.join(',')}`, f]));
     S.frames = [];
+    S.passFilter = null;
     S.movers = null;
     S.known = null;
     S.measure = [];
@@ -310,9 +361,14 @@ export function mountLab(root, { pointingsReady, onBack }) {
     S.bytes = 0;
     S.loaded = 0;
     S.trailsCache = null;
+    S.deepCache = null;
+    S.probe = null;
+    // Spectrum stories measure the tracked body as soon as frames arrive.
+    if (t.story?.probe && t.track && S.trackMode === 'track') S.probe = { x: (S.size - 1) / 2, y: (S.size - 1) / 2 };
+    renderSpectrum();
     el.movers.innerHTML = '<p class="muted">Press <span class="kbd">M</span> or “Find movers” to search the loaded frames for anything that moves in a straight line.</p>';
     el.known.innerHTML = '<p class="muted">Planets and moons are marked automatically. “Known asteroids” asks the IMCCE SkyBoT service what was in view.</p>';
-    showEmpty('Searching 92,069 SPHEREx pointings…', true);
+    showEmpty(`Searching ${P.count.toLocaleString('en-US')} SPHEREx pointings…`, true);
     await new Promise((r) => setTimeout(r, 30));
     const useTrack = t.track && S.trackMode === 'track';
     let hits;
@@ -349,14 +405,16 @@ export function mountLab(root, { pointingsReady, onBack }) {
       renderTimeline();
       return;
     }
-    const chosen = pickFrames(S.passes, budget);
-    S.allLoaded = chosen.length >= S.visits.length;
+    const chosen = pickFrames(S.passes, Math.min(budget, LOAD_MAX));
+    S.allLoaded = chosen.length >= Math.min(S.visits.length, LOAD_MAX);
     el.more.hidden = S.allLoaded;
-    el.more.textContent = `Load all ${S.visits.length} visits`;
+    el.more.textContent = S.visits.length > LOAD_MAX ? `Load ${LOAD_MAX} of ${S.visits.length} visits` : `Load all ${S.visits.length} visits`;
     S.expected = chosen.length;
     showEmpty(`Streaming ${chosen.length} frames from NASA’s archive…`, true);
     updateStream();
-    await Promise.all(chosen.map((v) => loadVisit(session, v)));
+    // Raw detector samples for the Deep view, spread evenly over the visits.
+    const every = Math.ceil(chosen.length / DEEP_MAX);
+    await Promise.all(chosen.map((v, i) => loadVisit(session, v, i % every === 0)));
     if (session !== S.session) return;
     if (!S.frames.length) showEmpty('Could not load frames from the archive. Check your connection and try again.', false);
     // A story that opens in Compare starts with the first and last dates.
@@ -369,13 +427,18 @@ export function mountLab(root, { pointingsReady, onBack }) {
     updateStream(true);
   }
 
-  async function loadVisit(session, v) {
+  async function loadVisit(session, v, samples) {
     const center = S.fixedCenter || (v.ra !== undefined && S.target.track && S.trackMode === 'track' ? [v.ra, v.dec] : [S.target.ra, S.target.dec]);
+    const old = S.reuse.get(`${P.fileUrl(v.i, v.det, v.sub)}|${center.join(',')}`);
+    if (old && old.frame.N === S.size && (!samples || old.frame.samples)) {
+      addFrame({ visit: old.visit, frame: old.frame, center });
+      return;
+    }
     const options = [v, ...(S.alts.get(v.i) || []).filter((h) => h.sub !== v.sub || h.det !== (v.det - (S.band === 'lw' ? 3 : 0)))];
     for (const h of options) {
       const det = h === v ? v.det : S.band === 'lw' ? h.det + 3 : h.det;
       try {
-        const frame = await makeCutout({ url: P.fileUrl(h.i, det, h.sub), ra: center[0], dec: center[1], size: S.size, scale: SCALE });
+        const frame = await makeCutout({ url: P.fileUrl(h.i, det, h.sub), ra: center[0], dec: center[1], size: S.size, scale: SCALE, samples });
         if (session !== S.session) return;
         if (!frame || frame.valid < 0.2) {
           if (frame) S.bytes += frame.bytes;
@@ -401,26 +464,34 @@ export function mountLab(root, { pointingsReady, onBack }) {
     S.loaded++;
     S.trailsCache = null;
     recolor();
+    if (S.probe) scheduleSpectrum();
     updateStream();
     if (S.frames.length === 1) {
       hideEmpty();
       S.cur = 0;
     }
-    renderTimeline();
-    renderPasses();
-    draw();
-    if (S.autoplay && S.frames.length >= 4 && S.mode !== 'trails') {
+    scheduleRender();
+    if (S.autoplay && S.frames.length >= 4 && S.mode !== 'trails' && S.mode !== 'deep') {
       S.autoplay = false;
       play();
     }
   }
 
+  // Frames arrive in bursts: redraw once per animation frame, not per frame.
+  let renderQueued = 0;
+  function scheduleRender() {
+    if (renderQueued) return;
+    renderQueued = requestAnimationFrame(() => {
+      renderQueued = 0;
+      renderTimeline();
+      renderPasses();
+      draw();
+    });
+  }
+
   function recolor() {
     const n = S.frames.length;
-    S.frames.forEach((f, i) => {
-      f.color = timeColor(i, n);
-      f.canvas = null;
-    });
+    S.frames.forEach((f, i) => (f.color = timeColor(i, n)));
   }
 
   // ---------- overlays: planets, moons, proper-motion markers ----------
@@ -453,8 +524,8 @@ export function mountLab(root, { pointingsReady, onBack }) {
 
   // ---------- frames in view ----------
   function active() {
-    if (S.passFilter === null) return S.frames;
-    const pass = S.passes[S.passFilter];
+    const pass = S.passFilter === null ? null : S.passes[S.passFilter];
+    if (!pass) return S.frames;
     return S.frames.filter((f) => f.frame.mjd >= pass.start - 0.01 && f.frame.mjd <= pass.end + 0.01);
   }
 
@@ -484,17 +555,81 @@ export function mountLab(root, { pointingsReady, onBack }) {
   }
 
   function trailsCanvas(list) {
-    const key = `${S.renderVersion}:${list.map((f) => f.frame.mjd).join(',')}`;
-    if (S.trailsCache && S.trailsCache.key === key) return S.trailsCache.canvas;
+    const key = list.map((f) => f.frame.mjd).join(',');
+    let t = S.trailsCache;
+    if (t?.key === key && t.version === S.renderVersion) return t.canvas;
     const N = list[0].frame.N;
-    const median = medianStack(list.map((f) => f.frame.z));
-    const c = document.createElement('canvas');
+    if (t?.key !== key) {
+      // The median and residuals only change with the frames; sliders repaint.
+      const median = medianStack(list.map((f) => f.frame.z));
+      t = S.trailsCache = { key, median, res: list.map((f) => residual(f.frame.z, median, N)), canvas: document.createElement('canvas') };
+    }
+    const c = t.canvas;
     c.width = c.height = N;
     const g = c.getContext('2d');
     const img = g.createImageData(N, N);
-    paintTrails(img, list.map((f) => f.frame.z), median, S.display, { colors: list.map((_, i) => timeColor(i, list.length)), N });
+    paintTrails(img, list.map((f) => f.frame.z), t.median, S.display, { colors: list.map((_, i) => timeColor(i, list.length)), N, res: t.res });
     g.putImageData(img, 0, 0);
-    S.trailsCache = { key, canvas: c, median };
+    t.version = S.renderVersion;
+    return c;
+  }
+
+  // ---------- deep stack ----------
+  // Drizzle every visit that kept its detector samples onto a grid up to 3x
+  // finer. In IR color each detector becomes one channel: D1/D4 blue, D2/D5
+  // green, D3/D6 red, so color follows wavelength across the 0.75-5 µm range.
+  function deepStack(list) {
+    const used = list.filter((f) => f.frame.samples?.n);
+    const key = `${used.map((f) => f.frame.mjd).join(',')}|${S.deepColor}|${S.detail}`;
+    const c = S.deepCache;
+    if (c?.key === key) return c;
+    if (used.length < 2) return null;
+    // While frames stream in, restack at most a few times a second.
+    const now = performance.now();
+    if (c?.stack && now - c.t < 700 && S.loaded < S.expected) {
+      clearTimeout(deepTimer);
+      deepTimer = setTimeout(draw, 720 - (now - c.t));
+      return c;
+    }
+    const N = used[0].frame.N;
+    const factor = S.detail;
+    const stackOf = (frames) => drizzle(frames, medianStack(frames.map((f) => f.frame.z)), { N, factor });
+    let stack;
+    const groups = [[], [], []];
+    for (const f of used) groups[(f.frame.detector - 1) % 3].push(f);
+    if (S.deepColor === 'color' && groups.filter((g) => g.length >= 2).length >= 2) {
+      const chans = groups.map((g) => (g.length >= 2 ? stackOf(g).img : null));
+      const have = chans.filter(Boolean);
+      // A detector with too few visits borrows the mean of the others.
+      const fill = () => {
+        const a = new Float32Array(have[0].length);
+        for (const h of have) for (let q = 0; q < a.length; q++) a[q] += h[q] / have.length;
+        return a;
+      };
+      stack = { color: chans.map((ch) => ch || fill()), NF: N * factor, counts: groups.map((g) => (g.length >= 2 ? g.length : 0)) };
+    } else {
+      const d = stackOf(used);
+      stack = { mono: d.img, NF: d.NF, counts: groups.map((g) => g.length) };
+    }
+    S.deepCache = { key, stack, used: used.length, t: now, canvas: null, version: -1 };
+    return S.deepCache;
+  }
+  let deepTimer = 0;
+
+  function deepCanvas(list) {
+    const d = deepStack(list);
+    if (!d) return null;
+    if (d.canvas && d.version === S.renderVersion) return d.canvas;
+    const { NF, color, mono } = d.stack;
+    const c = d.canvas || document.createElement('canvas');
+    c.width = c.height = NF;
+    const g = c.getContext('2d');
+    const img = g.createImageData(NF, NF);
+    if (color) paintColor(img, color[2], color[1], color[0], S.display);
+    else paintFrame(img, mono, S.display, COLORMAPS[S.display.cmap]);
+    g.putImageData(img, 0, 0);
+    d.canvas = c;
+    d.version = S.renderVersion;
     return c;
   }
 
@@ -540,12 +675,18 @@ export function mountLab(root, { pointingsReady, onBack }) {
     const f = list[S.cur];
     const N = f.frame.N;
     const { k, ox, oy } = geom(N);
-    ctx.imageSmoothingEnabled = S.display.smooth;
+    // The Deep grid is already finer than the data, so show it smooth.
+    ctx.imageSmoothingEnabled = S.display.smooth || S.mode === 'deep';
     ctx.imageSmoothingQuality = 'high';
 
     if (S.mode === 'grid') return drawGrid(list);
+    // Deep is one still image: nothing to play.
+    if (S.mode === 'deep' && S.playing) stop();
 
-    if (S.mode === 'trails') {
+    if (S.mode === 'deep') {
+      const dc = deepCanvas(list);
+      ctx.drawImage(dc || frameCanvas(f), ox, oy, N * k, N * k);
+    } else if (S.mode === 'trails') {
       ctx.drawImage(trailsCanvas(list), ox, oy, N * k, N * k);
     } else if (S.mode === 'compare') {
       const a = list[S.base];
@@ -587,6 +728,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
     ctx.lineWidth = 1;
     ctx.strokeRect(ox - 0.5, oy - 0.5, N * k + 1, N * k + 1);
 
+    if (S.display.coordGrid) drawCoordGrid(f.frame, { k, ox, oy, N });
     drawOverlays(f, list, { k, ox, oy, N });
     drawCompass(ox, oy, k, N);
     renderHud(f, list);
@@ -689,6 +831,24 @@ export function mountLab(root, { pointingsReady, onBack }) {
         label(lx + 10, ly + 12, `#${ti + 1}`, 'left', '#ffc2cf');
       });
     }
+    // Spectrum probe: the aperture and the ring that sets its background.
+    const pp = S.probe && probeIn(f.frame);
+    if (pp) {
+      const [x, y] = toScreen(...pp);
+      ctx.strokeStyle = '#ffe08a';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(x, y, Math.max(5, APERTURE[0] * k), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([3, 4]);
+      ctx.strokeStyle = 'rgba(255,224,138,.6)';
+      for (const r of APERTURE.slice(1)) {
+        ctx.beginPath();
+        ctx.arc(x, y, Math.max(8, r * k), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
     // Measurement points
     for (const m of S.measure) {
       const p = skyToFrame(f.frame, m.ra, m.dec);
@@ -730,6 +890,102 @@ export function mountLab(root, { pointingsReady, onBack }) {
     label(bx + bar / 2, by - 9, '1′', 'center');
   }
 
+  // RA/Dec lines at a round spacing that suits the zoom, labelled at the edges.
+  const DEC_STEPS = [0.5, 1, 2, 5, 10, 15, 20, 30, 60].map((m) => m / 60);
+  const RA_STEPS = [2, 4, 5, 10, 15, 20, 30, 60, 120, 300, 600, 900, 1200, 1800, 3600].map((t) => t / 240);
+  function drawCoordGrid(fr, { k, ox, oy, N }) {
+    const span = (N * SCALE) / 3600 / Math.max(1, S.view.zoom);
+    const dStep = DEC_STEPS.find((d) => span / d <= 6) || 1;
+    const cosd = Math.max(0.01, Math.cos((fr.dec * Math.PI) / 180));
+    let rStep = RA_STEPS.find((r) => r * cosd >= dStep * 0.8) || 15;
+    let rmin = Infinity;
+    let rmax = -Infinity;
+    let dmin = Infinity;
+    let dmax = -Infinity;
+    for (let t = 0; t <= 8; t++) {
+      const a = (t * (N - 1)) / 8;
+      for (const [x, y] of [[a, 0], [a, N - 1], [0, a], [N - 1, a]]) {
+        const sky = frameToSky(fr, x, y);
+        if (!sky) continue;
+        const r = fr.ra + ((((sky[0] - fr.ra + 540) % 360) + 360) % 360) - 180;
+        rmin = Math.min(rmin, r);
+        rmax = Math.max(rmax, r);
+        dmin = Math.min(dmin, sky[1]);
+        dmax = Math.max(dmax, sky[1]);
+      }
+    }
+    for (const pole of [90, -90]) {
+      const p = skyToFrame(fr, 0, pole);
+      if (p && p[0] >= 0 && p[1] >= 0 && p[0] <= N - 1 && p[1] <= N - 1) {
+        rmin = fr.ra - 180;
+        rmax = fr.ra + 180;
+        if (pole > 0) dmax = 90;
+        else dmin = -90;
+      }
+    }
+    if (!(rmax > rmin)) return;
+    while ((rmax - rmin) / rStep > 24) rStep *= 2;
+    const vx0 = Math.max(ox, 0);
+    const vy0 = Math.max(oy, 0);
+    const vx1 = Math.min(ox + N * k, cw);
+    const vy1 = Math.min(oy + N * k, ch);
+    if (vx1 <= vx0 || vy1 <= vy0) return;
+    const scr = (ra, dec) => {
+      const p = skyToFrame(fr, ra, dec);
+      return p && [ox + (p[0] + 0.5) * k, oy + (p[1] + 0.5) * k];
+    };
+    const lines = [];
+    for (let d = Math.ceil(dmin / dStep) * dStep; d <= dmax + 1e-9; d += dStep) {
+      if (Math.abs(d) > 89.999) continue;
+      const pts = [];
+      for (let t = 0; t <= 40; t++) pts.push(scr(rmin + ((rmax - rmin) * t) / 40, d));
+      lines.push({ pts: pts.filter(Boolean), text: fmtDecTick(d, dStep), edge: 'left' });
+    }
+    for (let r = Math.ceil(rmin / rStep) * rStep; r <= rmax + 1e-9; r += rStep) {
+      const pts = [];
+      for (let t = 0; t <= 40; t++) pts.push(scr(r, Math.max(-89.99, Math.min(89.99, dmin + ((dmax - dmin) * t) / 40))));
+      lines.push({ pts: pts.filter(Boolean), text: fmtRaTick(r, rStep), edge: 'top' });
+    }
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(vx0, vy0, vx1 - vx0, vy1 - vy0);
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(150,185,255,.38)';
+    ctx.lineWidth = 1;
+    for (const { pts } of lines) {
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+      ctx.stroke();
+    }
+    ctx.restore();
+    // Dec labels run down the left edge, RA labels along a row above the scale
+    // bar, both clear of the HUD in the corners.
+    for (const { pts, text, edge } of lines) {
+      if (pts.length < 2) continue;
+      const left = edge === 'left';
+      const want = left ? vx0 + 6 : Math.min(vy1 - 40, ch - 46);
+      const [x, y] = pts.reduce((b, p) => (Math.abs(p[left ? 0 : 1] - want) < Math.abs(b[left ? 0 : 1] - want) ? p : b));
+      if (left ? y < vy0 + 60 || y > vy1 - 56 : x < vx0 + 40 || x > vx1 - 76) continue;
+      label(x + 4, left ? y - 8 : y, text, 'left', '#cfdcff');
+    }
+  }
+
+  function fmtDecTick(d, step) {
+    const t = Math.round(Math.abs(d) * 3600);
+    const deg = Math.floor(t / 3600);
+    const m = Math.floor((t % 3600) / 60);
+    const sec = t % 60;
+    return `${d < 0 ? '−' : '+'}${deg}°${step < 1 ? `${String(m).padStart(2, '0')}′` : ''}${step < 1 / 60 ? `${String(sec).padStart(2, '0')}″` : ''}`;
+  }
+
+  function fmtRaTick(r, step) {
+    const t = Math.round(((((r % 360) + 360) % 360) * 240)) % 86400;
+    const h = Math.floor(t / 3600);
+    const m = Math.floor((t % 3600) / 60);
+    const sec = t % 60;
+    return `${h}h${step < 15 ? `${String(m).padStart(2, '0')}m` : ''}${step < 0.25 ? `${String(sec).padStart(2, '0')}s` : ''}`;
+  }
+
   function drawGrid(list) {
     const n = list.length;
     const cols = Math.ceil(Math.sqrt((n * cw) / ch));
@@ -758,9 +1014,32 @@ export function mountLab(root, { pointingsReady, onBack }) {
     const lambda = f.frame.lambda ? `${f.frame.lambda.toFixed(2)} µm` : '';
     el.hudTL.innerHTML = `<b>${fmtDate(f.frame.mjd)}</b><br>${lambda} · D${f.frame.detector} · Δt ${dt}`;
     el.hudBL.textContent = `Frame ${S.cur + 1} / ${list.length}${S.mode === 'compare' ? ` · base ${S.base + 1}` : ''}`;
-    const modeName = { blink: 'Blink', compare: { flip: 'Flip', swipe: 'Swipe', diff: 'Difference' }[S.cmp], trails: 'Trails', grid: 'Grid' }[S.mode];
+    const modeName = { blink: 'Blink', compare: { flip: 'Flip', swipe: 'Swipe', diff: 'Difference' }[S.cmp], trails: 'Trails', grid: 'Grid', deep: 'Deep' }[S.mode];
+    if (S.mode === 'deep') return renderDeepHud(f, list, modeName);
     el.hudTR.innerHTML = `<span class="lab-chip">${modeName}</span>${S.mode === 'trails' ? trailLegend(list) : ''}${S.mode === 'compare' && S.cmp === 'diff' ? '<span class="lab-diff-legend"><i class="neg"></i>fainter <i class="pos"></i>brighter</span>' : ''}${S.mode === 'compare' && S.cmp === 'swipe' ? `<span class="lab-diff-legend">◀ ${fmtDay(list[S.base].frame.mjd)} │ ${fmtDay(f.frame.mjd)} ▶</span>` : ''}`;
     renderFrameInfo(f, list);
+  }
+
+  function renderDeepHud(f, list, modeName) {
+    const d = S.deepCache;
+    renderFrameInfo(f, list);
+    if (!d || d.used < 2) {
+      el.hudTL.innerHTML = '<b>Deep stack</b><br>needs at least two visits';
+      el.hudBL.textContent = '';
+      el.hudTR.innerHTML = `<span class="lab-chip">${modeName}</span>`;
+      return;
+    }
+    const used = list.filter((g) => g.frame.samples?.n);
+    const moving = S.target.track && S.trackMode === 'track';
+    el.hudTL.innerHTML = `<b>${d.used} visits stacked</b><br>${fmtDay(used[0].frame.mjd)} – ${fmtDay(used.at(-1).frame.mjd)} · ${(SCALE / S.detail).toFixed(2)}″ pixels`;
+    el.hudBL.textContent = moving ? `Stacked on ${S.target.name}’s motion` : d.used < list.length ? `${d.used} of ${list.length} loaded visits` : 'Noise drops as √visits';
+    const bands = BANDS[S.band];
+    const legend = d.stack.color
+      ? `<div class="lab-legend lab-deep-legend">${[0, 1, 2]
+          .map((i) => `<span><i style="background:${['#5aa8ff', '#6dffb0', '#ff6b6b'][i]}"></i>${bands[i][1]}–${bands[i][2]} µm <b class="mono">${d.stack.counts[i] || '—'}</b></span>`)
+          .join('')}</div>`
+      : '';
+    el.hudTR.innerHTML = `<span class="lab-chip">${modeName}</span>${legend}`;
   }
 
   function trailLegend(list) {
@@ -776,9 +1055,9 @@ export function mountLab(root, { pointingsReady, onBack }) {
       <dt>Observed</dt><dd class="mono">${fmtDate(fr.mjd)}</dd>
       <dt>Wavelength</dt><dd class="mono">${fr.lambda ? `${fr.lambda.toFixed(3)} µm (±${(fr.bandwidth / 2).toFixed(3)})` : '—'}</dd>
       <dt>Detector</dt><dd class="mono">D${fr.detector} · ${surveyLabel(surveyOf(fr.mjd))}</dd>
-      <dt>Exposure</dt><dd class="mono">${fr.obsId || '—'}</dd>
+      <dt>Exposure</dt><dd class="mono">${esc(fr.obsId || '—')}</dd>
       <dt>Center</dt><dd class="mono">${formatRa(fr.ra)}<br>${formatDec(fr.dec)}</dd>
-      <dt>Source file</dt><dd><a href="${url}" target="_blank" rel="noopener" title="Full Level 2 FITS file (~70 MB) on the NASA IRSA S3 archive">${file.replace('_spx_', ' ')}</a></dd>`;
+      <dt>Source file</dt><dd><a href="${esc(url.startsWith(S3) ? url : '#')}" target="_blank" rel="noopener" title="Full Level 2 FITS file (~70 MB) on the NASA IRSA S3 archive">${esc(file.replace('_spx_', ' '))}</a></dd>`;
     const prev = list[S.cur - 1];
     el.frameinfo.innerHTML = `<span>${fmtDay(fr.mjd)}</span><span class="muted">${prev ? `+${fmtDelta((fr.mjd - prev.frame.mjd) * 24)}` : 'first frame'}</span>`;
   }
@@ -797,7 +1076,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
     el.title.textContent = story ? story.title : t.name;
     const [l, b] = equatorialToGalactic(t.ra, t.dec);
     el.coords.innerHTML = t.track
-      ? `${t.name} · moving target<br><span class="muted">${S.visits.length ? `${S.visits.length} SPHEREx pointings caught it` : ''}</span>`
+      ? `${esc(t.name)} · moving target<br><span class="muted">${S.visits.length ? `${S.visits.length} SPHEREx pointings caught it` : ''}</span>`
       : `${formatRa(t.ra)}  ${formatDec(t.dec)}<br><span class="muted">l ${l.toFixed(2)}°  b ${b.toFixed(2)}°${S.visits.length ? ` · ${S.visits.length} pointings` : ''}</span>`;
     el.blurb.textContent = story ? story.blurb : t.alt ? `${t.alt} · ${t.kicker}` : 'Every SPHEREx frame that covers this point, aligned north-up so you can see what changed.';
     el.tip.textContent = story?.tip || '';
@@ -878,14 +1157,17 @@ export function mountLab(root, { pointingsReady, onBack }) {
     set('cmp', S.cmp);
     set('cmap', S.display.cmap);
     set('track', S.trackMode);
+    set('deepColor', S.deepColor);
+    set('detail', S.detail);
     el.compareSeg.hidden = S.mode !== 'compare';
+    el.deepSeg.hidden = el.detailSeg.hidden = S.mode !== 'deep';
   }
 
   // ---------- playback ----------
   let raf = 0;
   let last = 0;
   function play() {
-    if (S.playing || active().length < 2) return;
+    if (S.playing || active().length < 2 || S.mode === 'deep') return;
     S.playing = true;
     el.play.innerHTML = ICON.pause;
     el.play.setAttribute('aria-label', 'Pause');
@@ -952,7 +1234,8 @@ export function mountLab(root, { pointingsReady, onBack }) {
           const rate = t.rate * SCALE;
           const pa = ((Math.atan2(-t.vx, -t.vy) * 180) / Math.PI + 360) % 360;
           const p0 = t.points[0];
-          const [ra, dec] = frameToSky(list[0].frame, p0.x, p0.y);
+          // Each frame has its own center when tracking a moving body.
+          const [ra, dec] = frameToSky(list[p0.f].frame, p0.x, p0.y);
           return `<div class="lab-mover"><b>#${i + 1}</b> <span class="mono">${rate.toFixed(1)}″/h</span> toward PA ${pa.toFixed(0)}° · ${t.points.length} detections<br><span class="muted">${classifyRate(rate)}</span><br><span class="mono muted">${formatRa(ra)} ${formatDec(dec)}</span></div>`;
         })
         .join('');
@@ -967,14 +1250,17 @@ export function mountLab(root, { pointingsReady, onBack }) {
     el.known.innerHTML = '<p class="muted">Asking IMCCE SkyBoT…</p>';
     try {
       const radius = (f.frame.N * SCALE * Math.SQRT1_2) / 3600;
+      const session = S.session;
       const objs = await queryKnownObjects(f.frame.ra, f.frame.dec, radius, f.frame.mjd);
+      // A reply that arrives after the user moved on belongs to the old target.
+      if (session !== S.session || !S.frames.includes(f)) return;
       S.known = { mjd: f.frame.mjd, list: objs };
       el.known.innerHTML = objs.length
         ? `<p class="muted">Known solar-system objects in view on ${fmtDay(f.frame.mjd)} (SkyBoT, IMCCE):</p>` +
-          objs.map((o) => `<div class="lab-mover"><b>${o.name}</b> <span class="muted">${o.cls || ''}${o.mag ? ` · V ${o.mag}` : ''}</span></div>`).join('')
+          objs.map((o) => `<div class="lab-mover"><b>${esc(o.name)}</b> <span class="muted">${esc(o.cls)}${o.mag ? ` · V ${esc(o.mag)}` : ''}</span></div>`).join('')
         : `<p class="muted">SkyBoT lists no known asteroids or comets in this field on ${fmtDay(f.frame.mjd)}.</p>`;
     } catch (err) {
-      el.known.innerHTML = `<p class="muted">Could not reach the SkyBoT service (${err.message}). Planets and moons are still marked.</p>`;
+      el.known.innerHTML = `<p class="muted">Could not reach the SkyBoT service (${esc(err.message)}). Planets and moons are still marked.</p>`;
     }
     draw();
   }
@@ -992,6 +1278,8 @@ export function mountLab(root, { pointingsReady, onBack }) {
         if (v === 'compare' && S.base === S.cur) S.base = 0;
         if (v === 'compare' && S.cur === 0 && active().length > 1) S.cur = active().length - 1;
       } else if (g === 'cmp') S.cmp = v;
+      else if (g === 'deepColor') S.deepColor = v;
+      else if (g === 'detail') S.detail = +v;
       else if (g === 'cmap') {
         S.display.cmap = v;
         S.renderVersion++;
@@ -1027,6 +1315,11 @@ export function mountLab(root, { pointingsReady, onBack }) {
       draw();
     } else if (act === 'movers') runMovers();
     else if (act === 'skybot') runSkybot();
+    else if (act === 'probe-clear') {
+      S.probe = null;
+      renderSpectrum();
+      draw();
+    }
     else if (act === 'more') {
       el.more.hidden = true;
       search(++S.session, Infinity);
@@ -1041,6 +1334,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
       S.cur = 0;
       S.base = 0;
       S.movers = null;
+      if (S.probe) renderSpectrum();
       renderPasses();
       renderTimeline();
       draw();
@@ -1061,10 +1355,10 @@ export function mountLab(root, { pointingsReady, onBack }) {
       const c = input.dataset.ctl;
       if (c === 'fps') S.fps = +input.value;
       else if (c === 'smooth') S.display.smooth = input.checked;
+      else if (c === 'coordGrid') S.display.coordGrid = input.checked;
       else {
         S.display[c] = +input.value;
         S.renderVersion++;
-        S.trailsCache = null;
       }
       draw();
     }),
@@ -1114,7 +1408,9 @@ export function mountLab(root, { pointingsReady, onBack }) {
       }
       return;
     }
-    if (e.shiftKey && list.length) measureAt(e);
+    if (!list.length || d.swipe) return;
+    if (e.shiftKey) measureAt(e);
+    else probeAt(e);
   });
   el.canvas.addEventListener(
     'wheel',
@@ -1166,10 +1462,13 @@ export function mountLab(root, { pointingsReady, onBack }) {
     el.cursorDl.innerHTML = `<dt>RA, Dec</dt><dd class="mono">${formatRa(ra)}<br>${formatDec(dec)}</dd><dt>Surface brightness</dt><dd class="mono">${v === v ? `${v.toFixed(3)} MJy/sr · ${z.toFixed(1)}σ` : 'masked'}</dd>`;
   }
 
-  function measureAt(e) {
-    const p = pixelAt(e);
-    if (!p) return;
-    // Snap to the brightest pixel nearby, then centroid.
+  /**
+   * Snap a click to the brightest pixel within two pixels and centroid it, so
+   * a click near a star lands on the star. Faint spots (below minZ) stay put.
+   */
+  function snap(p, minZ = -Infinity) {
+    const { N } = p;
+    const z = p.f.frame.z;
     let bx = Math.round(p.x);
     let by = Math.round(p.y);
     let best = -Infinity;
@@ -1177,14 +1476,35 @@ export function mountLab(root, { pointingsReady, onBack }) {
       for (let dx = -2; dx <= 2; dx++) {
         const x = Math.round(p.x) + dx;
         const y = Math.round(p.y) + dy;
-        if (x < 0 || y < 0 || x >= p.N || y >= p.N) continue;
-        const z = p.f.frame.z[y * p.N + x];
-        if (z > best) {
-          best = z;
+        if (x < 0 || y < 0 || x >= N || y >= N) continue;
+        if (z[y * N + x] > best) {
+          best = z[y * N + x];
           bx = x;
           by = y;
         }
       }
+    if (!(best >= minZ)) return [p.x, p.y];
+    let sx = 0;
+    let sy = 0;
+    let sw = 0;
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const x = bx + dx;
+        const y = by + dy;
+        if (x < 0 || y < 0 || x >= N || y >= N) continue;
+        const w = z[y * N + x];
+        if (!(w > 0)) continue;
+        sx += w * x;
+        sy += w * y;
+        sw += w;
+      }
+    return sw > 0 ? [sx / sw, sy / sw] : [bx, by];
+  }
+
+  function measureAt(e) {
+    const p = pixelAt(e);
+    if (!p) return;
+    const [bx, by] = snap(p);
     const [ra, dec] = frameToSky(p.f.frame, bx, by);
     S.measure.push({ ra, dec, mjd: p.f.frame.mjd });
     if (S.measure.length > 2) S.measure = S.measure.slice(-1);
@@ -1205,12 +1525,178 @@ export function mountLab(root, { pointingsReady, onBack }) {
     draw();
   }
 
+  // ---------- spectrum at a point ----------
+  // SPHEREx images through linear variable filters, so each visit sees a given
+  // spot at its own wavelength. Measuring the same spot in every visit traces
+  // its 0.75-5 µm spectrum, the survey's whole purpose.
+  function probeAt(e) {
+    const p = pixelAt(e);
+    if (!p) return;
+    const tracking = S.target.track && S.trackMode === 'track';
+    const c = (p.N - 1) / 2;
+    // Near a tracked body, measure the body itself at its predicted position;
+    // snapping could catch a star it happens to pass.
+    const [x, y] = tracking && Math.hypot(p.x - c, p.y - c) < 3 ? [c, c] : snap(p, 5);
+    if (tracking) S.probe = { x, y };
+    else {
+      const [ra, dec] = frameToSky(p.f.frame, x, y);
+      S.probe = { ra, dec };
+    }
+    renderSpectrum();
+    draw();
+  }
+
+  /** The probe's position in a frame's pixels. */
+  function probeIn(fr) {
+    const pr = S.probe;
+    if (!pr) return null;
+    return pr.ra === undefined ? [pr.x, pr.y] : skyToFrame(fr, pr.ra, pr.dec);
+  }
+
+  /** Aperture flux (mJy) with the median of a surrounding ring as background. */
+  function aperture(fr, x, y) {
+    const [r, r1, r2] = APERTURE;
+    const N = fr.N;
+    const ring = [];
+    let sum = 0;
+    let n = 0;
+    const xi = Math.round(x);
+    const yi = Math.round(y);
+    for (let dy = -r2 - 1; dy <= r2 + 1; dy++)
+      for (let dx = -r2 - 1; dx <= r2 + 1; dx++) {
+        const px = xi + dx;
+        const py = yi + dy;
+        const d = Math.hypot(px - x, py - y);
+        const off = px < 0 || py < 0 || px >= N || py >= N;
+        const q = py * N + px;
+        if (d <= r) {
+          if (off || fr.masked[q] || fr.data[q] !== fr.data[q]) return null;
+          sum += fr.data[q];
+          n++;
+        } else if (d >= r1 && d <= r2 && !off && fr.data[q] === fr.data[q] && !fr.masked[q]) ring.push(fr.data[q]);
+      }
+    if (ring.length < 8 || !n) return null;
+    ring.sort((a, b) => a - b);
+    const bg = ring[ring.length >> 1];
+    return {
+      flux: (sum - n * bg) * MJY_PER_PIXEL,
+      err: fr.sigma * Math.sqrt(n + (n * n * Math.PI) / (2 * ring.length)) * MJY_PER_PIXEL,
+    };
+  }
+
+  function spectrumPoints(list) {
+    const out = [];
+    list.forEach((f) => {
+      const fr = f.frame;
+      const p = probeIn(fr);
+      if (!p) return;
+      const ph = aperture(fr, p[0], p[1]);
+      if (!ph) return;
+      // Wavelength at this exact spot on the detector, not the frame center.
+      let w = { lambda: fr.lambda, bandwidth: fr.bandwidth };
+      if (fr.wave && fr.wcs) {
+        const sky = frameToSky(fr, p[0], p[1]);
+        const d = fr.wcs.skyToPix(sky[0], sky[1]);
+        if (d) w = lookupWave(fr.wave, d[0], d[1]);
+      }
+      if (!(w.lambda > 0)) return;
+      out.push({ ...ph, lambda: w.lambda, bw: w.bandwidth || 0, mjd: fr.mjd, color: f.color });
+    });
+    out.sort((a, b) => a.lambda - b.lambda);
+    // A point far from its spectral neighbours was probably hit by a passing
+    // star, a cosmic ray or a satellite: show it hollow.
+    for (const p of out) {
+      const near = out.filter((q) => q !== p && Math.abs(q.lambda - p.lambda) < 0.12).map((q) => q.flux);
+      if (near.length < 2) continue;
+      near.sort((a, b) => a - b);
+      const m = near[near.length >> 1];
+      p.odd = Math.abs(p.flux - m) > Math.max(5 * p.err, 0.5 * Math.abs(m));
+    }
+    return out;
+  }
+
+  let spectrumTimer = 0;
+  function scheduleSpectrum() {
+    clearTimeout(spectrumTimer);
+    spectrumTimer = setTimeout(renderSpectrum, 250);
+  }
+
+  function renderSpectrum() {
+    clearTimeout(spectrumTimer);
+    root.firstElementChild.classList.toggle('probing', !!S.probe);
+    if (!S.probe) {
+      const t = S.target;
+      el.spectrum.innerHTML =
+        t?.track && S.trackMode === 'track'
+          ? `<p class="muted">Click ${esc(t.name)} in the middle of the view to measure its reflected light in every visit, or click any star.</p>`
+          : '<p class="muted">Click any star or galaxy to measure its brightness in every loaded visit. Each visit sees a slightly different color, so together they trace its infrared spectrum.</p>';
+      return;
+    }
+    const list = active();
+    const pts = spectrumPoints(list);
+    const where = S.probe.ra === undefined ? `on ${esc(S.target.name)}, following its motion` : `${formatRa(S.probe.ra)} ${formatDec(S.probe.dec)}`;
+    const head = `<div class="lab-spectrum-head"><span class="mono muted">${where}</span><button class="btn icon" data-act="probe-clear" aria-label="Clear spectrum" title="Clear">×</button></div>`;
+    if (pts.length < 3) {
+      el.spectrum.innerHTML = `${head}<p class="muted">${pts.length ? `Only ${pts.length} clean measurement${pts.length > 1 ? 's' : ''} here` : 'No clean measurement here'}: the spot is masked or too near the edge in most visits. Try a spot nearer the middle${S.allLoaded ? '' : ', or load every visit'}.</p>`;
+      return;
+    }
+    const few = pts.length < list.length / 2 ? `<p class="muted lab-spectrum-note">Only ${pts.length} of ${list.length} visits measured cleanly here. The rest were masked, which usually means the source is too bright for the detector, so treat these points with care.</p>` : '';
+    el.spectrum.innerHTML = head + spectrumSvg(pts) + few + `<p class="muted lab-spectrum-note">${pts.length} visits · ${APERTURE[0] * SCALE}″ aperture · dot color = date, as on the timeline; hollow = off the trend. Stars fade toward longer wavelengths; dips can mark ices and molecules, such as water ice near 3 µm.</p>`;
+  }
+
+  function spectrumSvg(pts) {
+    const W = 280;
+    const H = 168;
+    const m = { l: 40, r: 8, t: 16, b: 26 };
+    const lo = BANDS[S.band][0][1];
+    const hi = BANDS[S.band][2][2];
+    const lmin = Math.min(lo, ...pts.map((p) => p.lambda - p.bw / 2));
+    const lmax = Math.max(hi, ...pts.map((p) => p.lambda + p.bw / 2));
+    let fmin = Math.min(0, ...pts.map((p) => p.flux - p.err));
+    let fmax = Math.max(...pts.map((p) => p.flux + p.err));
+    if (!(fmax > fmin)) fmax = fmin + 1;
+    const pad = (fmax - fmin) * 0.08;
+    fmax += pad;
+    if (fmin < 0) fmin -= pad;
+    const X = (l) => m.l + ((l - lmin) / (lmax - lmin)) * (W - m.l - m.r);
+    const Y = (f) => m.t + (1 - (f - fmin) / (fmax - fmin)) * (H - m.t - m.b);
+    const ystep = niceStep((fmax - fmin) / 4);
+    const yt = [];
+    for (let v = Math.ceil(fmin / ystep) * ystep; v <= fmax; v += ystep) yt.push(v);
+    const xt = S.band === 'sw' ? [0.8, 1.0, 1.2, 1.4, 1.6, 1.8, 2.0, 2.2, 2.4] : [2.5, 3.0, 3.5, 4.0, 4.5, 5.0];
+    const fmt = (v) => (Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(0) : Math.abs(v) >= 1 ? v.toFixed(1) : v.toFixed(2));
+    const rgb = (c) => `rgb(${c.map(Math.round).join(',')})`;
+    return `<svg class="lab-spectrum-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Spectrum: flux in millijansky against wavelength in micrometres">
+      ${yt.map((v) => `<line class="grid" x1="${m.l}" x2="${W - m.r}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${m.l - 5}" y="${Y(v) + 3}" text-anchor="end">${fmt(v)}</text>`).join('')}
+      ${xt.filter((l) => l >= lmin && l <= lmax).map((l) => `<line class="tick" x1="${X(l)}" x2="${X(l)}" y1="${H - m.b}" y2="${H - m.b + 4}"/><text x="${X(l)}" y="${H - m.b + 14}" text-anchor="middle">${l.toFixed(1)}</text>`).join('')}
+      <line class="axis" x1="${m.l}" x2="${W - m.r}" y1="${H - m.b}" y2="${H - m.b}"/>
+      ${fmin < 0 ? `<line class="zero" x1="${m.l}" x2="${W - m.r}" y1="${Y(0)}" y2="${Y(0)}"/>` : ''}
+      <text class="unit" x="${W - m.r}" y="${H - 2}" text-anchor="end">µm</text>
+      <text class="unit" x="4" y="8">mJy</text>
+      ${pts
+        .map(
+          (p) => `<g><title>${p.lambda.toFixed(3)} µm · ${p.flux.toFixed(2)} ± ${p.err.toFixed(2)} mJy · ${fmtDay(p.mjd)}${p.odd ? ' · off the trend: maybe a passing star or cosmic ray' : ''}</title>
+        <line class="err" x1="${X(p.lambda)}" x2="${X(p.lambda)}" y1="${Y(p.flux - p.err)}" y2="${Y(p.flux + p.err)}"/>
+        <line class="err" x1="${X(p.lambda - p.bw / 2)}" x2="${X(p.lambda + p.bw / 2)}" y1="${Y(p.flux)}" y2="${Y(p.flux)}"/>
+        <circle cx="${X(p.lambda)}" cy="${Y(p.flux)}" r="3.2" ${p.odd ? `fill="none" stroke="${rgb(p.color)}" stroke-width="1.5"` : `fill="${rgb(p.color)}"`}/></g>`,
+        )
+        .join('')}
+    </svg>`;
+  }
+
+  function niceStep(raw) {
+    const p = 10 ** Math.floor(Math.log10(raw));
+    const f = raw / p;
+    return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
+  }
+
   // Keyboard shortcuts while the Lab is visible.
   window.addEventListener('keydown', (e) => {
     if (root.closest('.view')?.hidden || root.offsetParent === null) return;
-    if (e.target.matches('input, textarea')) return;
+    // Leave browser shortcuts (copy, select all, page zoom) alone.
+    if (e.ctrlKey || e.metaKey || e.altKey || e.target.closest('input, textarea, select, [contenteditable]')) return;
     const k = e.key;
-    const modes = { b: 'blink', c: 'compare', t: 'trails', g: 'grid' };
+    const modes = { b: 'blink', c: 'compare', t: 'trails', g: 'grid', s: 'deep' };
     if (k === ' ') {
       e.preventDefault();
       S.playing ? stop() : play();
@@ -1249,7 +1735,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
     items.push(...hits);
     el.suggest.hidden = !items.length;
     el.suggest.innerHTML = items
-      .map((h, i) => `<button data-sug="${i}"><b>${h.name}</b>${h.kind ? `<span class="muted"> · ${h.kind}</span>` : ''}</button>`)
+      .map((h, i) => `<button data-sug="${i}"><b>${esc(h.name)}</b>${h.kind ? `<span class="muted"> · ${esc(h.kind)}</span>` : ''}</button>`)
       .join('');
     el.suggest.onclick = (e) => {
       const b = e.target.closest('[data-sug]');
