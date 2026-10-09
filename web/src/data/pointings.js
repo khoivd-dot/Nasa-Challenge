@@ -86,11 +86,21 @@ export class Pointings {
     return [(p[3] * xi - p[1] * eta) / det + CRPIX, (-p[2] * xi + p[0] * eta) / det + CRPIX];
   }
 
+  /**
+   * The index stores the WCS of the first sub-exposure that exists for each
+   * pointing (the lowest bit of its mask), not always sub-exposure 1.
+   */
+  firstSub(i) {
+    const m = this.mask[i];
+    return m ? 32 - Math.clz32(m & -m) : 1;
+  }
+
   /** Sky corners [[ra,dec] x4] of detector d (1-3) for sub-exposure s (1-4). */
-  corners(i, d = 1, s = 1) {
+  corners(i, d = 1, s = this.firstSub(i)) {
     const [cx, cy] = this.detCenter[d];
-    const ox = cx + (s - 1) * SUB_STEP[0];
-    const oy = cy + (s - 1) * SUB_STEP[1];
+    const s0 = this.firstSub(i);
+    const ox = cx + (s - s0) * SUB_STEP[0];
+    const oy = cy + (s - s0) * SUB_STEP[1];
     const h = DET_SIZE / 2;
     return [
       [ox - h, oy - h],
@@ -143,12 +153,13 @@ export class Pointings {
       if (dot < cosLimit) continue;
       const px = this.skyToPixel(i, tra, tdec);
       if (!px) continue;
+      const s0 = this.firstSub(i);
       for (let d = 1; d <= 3; d++) {
         const [cx, cy] = this.detCenter[d];
         for (let s = 1; s <= 4; s++) {
           if (!(this.mask[i] & (1 << (s - 1)))) continue;
-          const x = px[0] - (cx - CRPIX) - (s - 1) * SUB_STEP[0];
-          const y = px[1] - (cy - CRPIX) - (s - 1) * SUB_STEP[1];
+          const x = px[0] - (cx - CRPIX) - (s - s0) * SUB_STEP[0];
+          const y = px[1] - (cy - CRPIX) - (s - s0) * SUB_STEP[1];
           if (x > margin && x < DET_SIZE - margin && y > margin && y < DET_SIZE - margin) {
             out.push({ i, det: d, sub: s, x, y, mjd, ra: tra, dec: tdec });
           }

@@ -226,8 +226,21 @@ def main():
          "folder": r["folder"], "exp": r["exp"], "mask": sum(1 << (s - 1) for s in r["subs"])}
         for r in rows
     ]
+    allrows = dedupe(allrows)
     allrows.sort(key=lambda r: r["mjd"])
     write(allrows, folders, geometry, meta_path, bin_path)
+
+
+def dedupe(rows):
+    """One row per exposure. Reprocessed weeks can list an exposure under a
+    second folder; keep the latest folder (it sorts last), so incremental runs
+    never index the same pointing twice."""
+    best = {}
+    for r in rows:
+        key = (r["folder"].split("/")[2], r["exp"])
+        if key not in best or r["folder"] > best[key]["folder"]:
+            best[key] = r
+    return list(best.values())
 
 
 COLUMNS = [("t", "f4"), ("ra", "f4"), ("dec", "f4"), ("pc", "i2x4"), ("folder", "u2"), ("exp", "u2"), ("mask", "u1")]

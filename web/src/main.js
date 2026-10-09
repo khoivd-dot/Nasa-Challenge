@@ -39,7 +39,7 @@ async function showLab(params) {
     const { mountLab } = await import('./lab/lab.js');
     lab = mountLab(shell.views.lab, { pointingsReady, onBack: () => go({ view: 'sky' }) });
   }
-  lab.open(params);
+  lab.open(params).catch((err) => console.error('Could not open the Lab:', err));
 }
 
 function showAbout() {

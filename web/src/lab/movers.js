@@ -25,7 +25,8 @@ export function detect(z, median, masked, N, { threshold = 6 } = {}) {
         for (let dx = -1; dx <= 1; dx++) {
           if (!dx && !dy) continue;
           const j = k + dy * N + dx;
-          if (masked && masked[j]) bad = true;
+          // A masked or blank neighbour would leave the centroid undefined.
+          if ((masked && masked[j]) || res[j] !== res[j]) bad = true;
           if (res[j] > d) {
             peak = false;
             break;
@@ -39,7 +40,8 @@ export function detect(z, median, masked, N, { threshold = 6 } = {}) {
       let sw = 0;
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
-          const w = Math.max(0, res[k + dy * N + dx]);
+          const v = res[k + dy * N + dx];
+          const w = v > 0 ? v : 0;
           sx += w * dx;
           sy += w * dy;
           sw += w;
@@ -59,11 +61,16 @@ export function detect(z, median, masked, N, { threshold = 6 } = {}) {
  */
 export function findMovers(frames, median, N, { threshold = 6, window = 240, minMove = 1.6, maxRate = 80, apart = 36 } = {}) {
   const order = frames.map((f, i) => ({ f, i })).sort((a, b) => a.f.mjd - b.f.mjd);
+  // Frames of one pass share the same set of "other" frames, so their
+  // reference medians are computed once.
+  const refs = new Map();
   const dets = order.map(({ f, i }) => {
     // Static-sky reference for this frame: the median of frames taken well
     // before or after it, so a slow mover never contaminates its own reference.
     const others = frames.filter((g) => Math.abs(g.mjd - f.mjd) * 24 > apart);
-    const ref = others.length >= 3 ? medianStack(others.map((g) => g.z)) : median;
+    const key = others.map((g) => g.mjd).join(',');
+    if (others.length >= 3 && !refs.has(key)) refs.set(key, medianStack(others.map((g) => g.z)));
+    const ref = others.length >= 3 ? refs.get(key) : median;
     return { i, t: f.mjd * 24, list: detect(f.z, ref, f.masked, N, { threshold }).map((d) => ({ ...d, used: false })) };
   });
   const candidates = [];
@@ -99,6 +106,7 @@ export function findMovers(frames, median, N, { threshold = 6, window = 240, min
           }
           // A few aligned blips can happen by chance, so demand a tight line:
           // four or more detections, or three strong ones within a day.
+          if (pts.length < 3) continue;
           const fit = fitResidual(pts, dets);
           const hours = dets[pts.at(-1).c].t - dets[pts[0].c].t;
           const ok = (pts.length >= 4 && fit < 1.0) || (pts.length === 3 && hours <= 24 && fit < 0.5 && pts.every((x) => x.det.snr >= 10));

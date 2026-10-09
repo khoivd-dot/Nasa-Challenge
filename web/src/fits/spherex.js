@@ -125,18 +125,23 @@ export class SpherexFile {
       for (let i = 0; i < vals.length; i++) vals[i] = dv.getFloat32(4 * (nx + ny + i), false);
       this._wave = { gx, gy, vals, nx };
     }
-    const { gx, gy, vals, nx } = this._wave;
-    const locate = (g, v) => {
-      let i = 0;
-      while (i < g.length - 2 && v > g[i + 1]) i++;
-      return [i, Math.min(1, Math.max(0, (v - g[i]) / (g[i + 1] - g[i])))];
-    };
-    const [ix, fx] = locate(gx, x);
-    const [iy, fy] = locate(gy, y);
-    // VALUES has FITS dims (2, nx, ny): pair index fastest, then X, then Y.
-    const at = (i, j, m) => vals[m + 2 * (i + nx * j)];
-    const lerp = (m) =>
-      (1 - fy) * ((1 - fx) * at(ix, iy, m) + fx * at(ix + 1, iy, m)) + fy * ((1 - fx) * at(ix, iy + 1, m) + fx * at(ix + 1, iy + 1, m));
-    return { lambda: lerp(0), bandwidth: lerp(1) };
+    return lookupWave(this._wave, x, y);
   }
+}
+
+/** Central wavelength and bandwidth at (x, y) from a loaded WCS-WAVE table. */
+export function lookupWave(table, x, y) {
+  const { gx, gy, vals, nx } = table;
+  const locate = (g, v) => {
+    let i = 0;
+    while (i < g.length - 2 && v > g[i + 1]) i++;
+    return [i, Math.min(1, Math.max(0, (v - g[i]) / (g[i + 1] - g[i])))];
+  };
+  const [ix, fx] = locate(gx, x);
+  const [iy, fy] = locate(gy, y);
+  // VALUES has FITS dims (2, nx, ny): pair index fastest, then X, then Y.
+  const at = (i, j, m) => vals[m + 2 * (i + nx * j)];
+  const lerp = (m) =>
+    (1 - fy) * ((1 - fx) * at(ix, iy, m) + fx * at(ix + 1, iy, m)) + fy * ((1 - fx) * at(ix, iy + 1, m) + fx * at(ix + 1, iy + 1, m));
+  return { lambda: lerp(0), bandwidth: lerp(1) };
 }
