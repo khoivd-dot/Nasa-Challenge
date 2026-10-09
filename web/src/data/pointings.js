@@ -18,20 +18,38 @@ let cache;
 
 export async function loadPointings(base = import.meta.env.BASE_URL) {
   if (cache) return cache;
+  const get = (url, kind) =>
+    fetch(url).then((r) => {
+      if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
+      return r[kind]();
+    });
   cache = (async () => {
-    const [meta, buf] = await Promise.all([
-      fetch(`${base}data/pointings.json`).then((r) => r.json()),
-      fetch(`${base}data/pointings.bin`).then((r) => r.arrayBuffer()),
-    ]);
+    const [meta, buf] = await Promise.all([get(`${base}data/pointings.json`, 'json'), get(`${base}data/pointings.bin`, 'arrayBuffer')]);
     return new Pointings(meta, buf);
   })();
+  // A failed load (offline, mid-deploy) can be retried later.
+  cache.catch(() => (cache = null));
   return cache;
 }
 
+// Archive folder names become file URLs: accept only the archive's own shape.
+const FOLDER_RE = /^qr\d+\/level2\/\d{4}W\d{2}_\w{2}\/[\w.-]+$/;
+
 export class Pointings {
   constructor(meta, buf) {
+    const n = meta?.count;
+    const ok =
+      Number.isInteger(n) &&
+      n > 0 &&
+      buf.byteLength === 25 * n &&
+      Array.isArray(meta.folders) &&
+      meta.folders.every((f) => typeof f === 'string' && FOLDER_RE.test(f)) &&
+      meta.detectors?.['2'] &&
+      meta.detectors?.['3'] &&
+      meta.columns?.every((c) => Number.isInteger(c.offset) && c.offset >= 0 && c.offset <= buf.byteLength);
+    if (!ok) throw new Error('The SPHEREx pointing index is damaged.');
     this.meta = meta;
-    const n = (this.count = meta.count);
+    this.count = n;
     const col = Object.fromEntries(meta.columns.map((c) => [c.name, c.offset]));
     const f32 = (o) => new Float32Array(buf.slice(o, o + 4 * n));
     this.t = f32(col.t); // days since meta.mjd0
@@ -41,6 +59,7 @@ export class Pointings {
     this.pc = new Float32Array(4 * n);
     for (let i = 0; i < 4 * n; i++) this.pc[i] = pc[i] * meta.pcScale;
     this.folder = new Uint16Array(buf.slice(col.folder, col.folder + 2 * n));
+    if (this.folder.some((k) => k >= meta.folders.length)) throw new Error('The SPHEREx pointing index is damaged.');
     this.exp = new Uint16Array(buf.slice(col.exp, col.exp + 2 * n));
     this.mask = new Uint8Array(buf.slice(col.mask, col.mask + n));
     this.mjd0 = meta.mjd0;

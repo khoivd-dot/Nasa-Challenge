@@ -9,10 +9,9 @@ on:
     - cron: '17 6 * * 1'
   workflow_dispatch:
 
+# Least privilege: only the deploy job may publish to Pages.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages-${{ github.ref }}
@@ -23,9 +22,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # Third-party actions are pinned to commit SHAs so a moved tag cannot
+      # change what runs here.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
 
@@ -35,7 +38,12 @@ jobs:
         timeout-minutes: 25
         run: python3 pipeline/build_index.py
 
-      - uses: actions/setup-node@v4
+      - name: Check the pointing index, or fall back to the committed one
+        run: |
+          python3 -c "import json,os; m=json.load(open('web/public/data/pointings.json')); assert m['count'] > 0 and os.path.getsize('web/public/data/pointings.bin') == 25 * m['count']" \
+            || git checkout -- web/public/data
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -45,7 +53,7 @@ jobs:
         working-directory: web
         run: npm ci
 
-      - name: Test the FITS engine against astropy fixtures
+      - name: Test (FITS engine against astropy fixtures, Lab maths)
         working-directory: web
         run: npm test
 
@@ -53,18 +61,22 @@ jobs:
         working-directory: web
         run: npm run build
 
-      - uses: actions/upload-pages-artifact@v3
-        if: github.event_name != 'pull_request'
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:
           path: web/dist
 
   deploy:
-    if: github.event_name != 'pull_request'
+    # Only main is ever published, including manual runs.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

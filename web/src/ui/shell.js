@@ -5,6 +5,7 @@ import { STORIES } from '../lab/stories.js';
 import { searchTargets } from '../data/targets.js';
 import { parseCoords, formatRa, formatDec } from '../data/sky-math.js';
 import { mjdToDate } from '../data/pointings.js';
+import { esc } from './esc.js';
 
 export function createShell(app) {
   app.innerHTML = `
@@ -101,7 +102,7 @@ export function createShell(app) {
     if (c) items.push({ type: 'coords', name: `${formatRa(c[0])} ${formatDec(c[1])}`, kind: 'Open these coordinates', ra: c[0], dec: c[1] });
     items.push(...searchTargets(q));
     sug.hidden = !items.length;
-    sug.innerHTML = items.map((h, i) => `<button data-i="${i}"><b>${h.name}</b><span class="muted"> · ${h.kind || ''}</span></button>`).join('');
+    sug.innerHTML = items.map((h, i) => `<button data-i="${i}"><b>${esc(h.name)}</b><span class="muted"> · ${esc(h.kind)}</span></button>`).join('');
   });
   const pick = (h) => {
     sug.hidden = true;

@@ -25,6 +25,8 @@ import time
 import urllib.parse
 import urllib.request
 
+FOLDER_RE = re.compile(r"^qr\d+/level2/\d{4}W\d{2}_\w{2}/[\w.-]+$")
+
 BUCKET = "https://nasa-irsa-spherex.s3.amazonaws.com/"
 RELEASES = ["qr2", "qr3"]
 OUT = os.path.join(os.path.dirname(__file__), "..", "web", "public", "data")
@@ -80,7 +82,10 @@ def read_wcs(key):
     while "MJD-AVG" not in hdr and start < 2880 + 46080:
         hdr.update(parse_cards(http(BUCKET + key, {"Range": f"bytes={start}-{start + 23039}"})))
         start += 23040
-    return {k: float(hdr[k]) for k in ("CRVAL1", "CRVAL2", "PC1_1", "PC1_2", "PC2_1", "PC2_2", "CRPIX1", "CRPIX2", "MJD-AVG")}
+    w = {k: float(hdr[k]) for k in ("CRVAL1", "CRVAL2", "PC1_1", "PC1_2", "PC2_1", "PC2_2", "CRPIX1", "CRPIX2", "MJD-AVG")}
+    if not all(math.isfinite(v) for v in w.values()):
+        raise ValueError("non-finite WCS value")
+    return w
 
 
 def tan_project(ra0, dec0, ra, dec):
@@ -114,7 +119,9 @@ def list_pointings(skip_folders):
     with cf.ThreadPoolExecutor(32) as ex:
         for vs in ex.map(versions, weeks):
             folders += [v.rstrip("/") for v in vs]
-    folders = [f for f in folders if f not in skip_folders]
+    # Folder names end up in file URLs the web app builds: keep only names in
+    # the archive's known shape.
+    folders = [f for f in folders if FOLDER_RE.match(f) and f not in skip_folders]
     print(f"{len(weeks)} week segments, {len(folders)} new folders", flush=True)
 
     def d1_files(folder):
@@ -275,8 +282,14 @@ def write(rows, folders, geometry, meta_path, bin_path):
         "crpix": 1020.5,
         "time_range": [rows[0]["mjd"], rows[-1]["mjd"]] if rows else None,
     }
-    open(bin_path, "wb").write(blob)
-    json.dump(meta, open(meta_path, "w"), indent=1)
+    # Write both files next to their targets, then swap them in, so a run that
+    # dies halfway never leaves a mismatched pair behind.
+    with open(bin_path + ".tmp", "wb") as f:
+        f.write(blob)
+    with open(meta_path + ".tmp", "w") as f:
+        json.dump(meta, f, indent=1)
+    os.replace(bin_path + ".tmp", bin_path)
+    os.replace(meta_path + ".tmp", meta_path)
     print(f"wrote {n} pointings, {len(blob) / 1e6:.2f} MB", flush=True)
 
 

@@ -5,7 +5,8 @@
 
 import '../styles/lab.css';
 import { formatRa, formatDec, tanProject, tanDeproject, parseCoords, equatorialToGalactic } from '../data/sky-math.js';
-import { mjdToDate } from '../data/pointings.js';
+import { mjdToDate, S3 } from '../data/pointings.js';
+import { esc } from '../ui/esc.js';
 import { TARGETS, searchTargets } from '../data/targets.js';
 import { surveyLabel, surveyColorVar } from '../data/survey.js';
 import { makeCutout, clearQueue } from './cutout.js';
@@ -1054,9 +1055,9 @@ export function mountLab(root, { pointingsReady, onBack }) {
       <dt>Observed</dt><dd class="mono">${fmtDate(fr.mjd)}</dd>
       <dt>Wavelength</dt><dd class="mono">${fr.lambda ? `${fr.lambda.toFixed(3)} µm (±${(fr.bandwidth / 2).toFixed(3)})` : '—'}</dd>
       <dt>Detector</dt><dd class="mono">D${fr.detector} · ${surveyLabel(surveyOf(fr.mjd))}</dd>
-      <dt>Exposure</dt><dd class="mono">${fr.obsId || '—'}</dd>
+      <dt>Exposure</dt><dd class="mono">${esc(fr.obsId || '—')}</dd>
       <dt>Center</dt><dd class="mono">${formatRa(fr.ra)}<br>${formatDec(fr.dec)}</dd>
-      <dt>Source file</dt><dd><a href="${url}" target="_blank" rel="noopener" title="Full Level 2 FITS file (~70 MB) on the NASA IRSA S3 archive">${file.replace('_spx_', ' ')}</a></dd>`;
+      <dt>Source file</dt><dd><a href="${esc(url.startsWith(S3) ? url : '#')}" target="_blank" rel="noopener" title="Full Level 2 FITS file (~70 MB) on the NASA IRSA S3 archive">${esc(file.replace('_spx_', ' '))}</a></dd>`;
     const prev = list[S.cur - 1];
     el.frameinfo.innerHTML = `<span>${fmtDay(fr.mjd)}</span><span class="muted">${prev ? `+${fmtDelta((fr.mjd - prev.frame.mjd) * 24)}` : 'first frame'}</span>`;
   }
@@ -1075,7 +1076,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
     el.title.textContent = story ? story.title : t.name;
     const [l, b] = equatorialToGalactic(t.ra, t.dec);
     el.coords.innerHTML = t.track
-      ? `${t.name} · moving target<br><span class="muted">${S.visits.length ? `${S.visits.length} SPHEREx pointings caught it` : ''}</span>`
+      ? `${esc(t.name)} · moving target<br><span class="muted">${S.visits.length ? `${S.visits.length} SPHEREx pointings caught it` : ''}</span>`
       : `${formatRa(t.ra)}  ${formatDec(t.dec)}<br><span class="muted">l ${l.toFixed(2)}°  b ${b.toFixed(2)}°${S.visits.length ? ` · ${S.visits.length} pointings` : ''}</span>`;
     el.blurb.textContent = story ? story.blurb : t.alt ? `${t.alt} · ${t.kicker}` : 'Every SPHEREx frame that covers this point, aligned north-up so you can see what changed.';
     el.tip.textContent = story?.tip || '';
@@ -1256,10 +1257,10 @@ export function mountLab(root, { pointingsReady, onBack }) {
       S.known = { mjd: f.frame.mjd, list: objs };
       el.known.innerHTML = objs.length
         ? `<p class="muted">Known solar-system objects in view on ${fmtDay(f.frame.mjd)} (SkyBoT, IMCCE):</p>` +
-          objs.map((o) => `<div class="lab-mover"><b>${o.name}</b> <span class="muted">${o.cls || ''}${o.mag ? ` · V ${o.mag}` : ''}</span></div>`).join('')
+          objs.map((o) => `<div class="lab-mover"><b>${esc(o.name)}</b> <span class="muted">${esc(o.cls)}${o.mag ? ` · V ${esc(o.mag)}` : ''}</span></div>`).join('')
         : `<p class="muted">SkyBoT lists no known asteroids or comets in this field on ${fmtDay(f.frame.mjd)}.</p>`;
     } catch (err) {
-      el.known.innerHTML = `<p class="muted">Could not reach the SkyBoT service (${err.message}). Planets and moons are still marked.</p>`;
+      el.known.innerHTML = `<p class="muted">Could not reach the SkyBoT service (${esc(err.message)}). Planets and moons are still marked.</p>`;
     }
     draw();
   }
@@ -1627,13 +1628,13 @@ export function mountLab(root, { pointingsReady, onBack }) {
       const t = S.target;
       el.spectrum.innerHTML =
         t?.track && S.trackMode === 'track'
-          ? `<p class="muted">Click ${t.name} in the middle of the view to measure its reflected light in every visit, or click any star.</p>`
+          ? `<p class="muted">Click ${esc(t.name)} in the middle of the view to measure its reflected light in every visit, or click any star.</p>`
           : '<p class="muted">Click any star or galaxy to measure its brightness in every loaded visit. Each visit sees a slightly different color, so together they trace its infrared spectrum.</p>';
       return;
     }
     const list = active();
     const pts = spectrumPoints(list);
-    const where = S.probe.ra === undefined ? `on ${S.target.name}, following its motion` : `${formatRa(S.probe.ra)} ${formatDec(S.probe.dec)}`;
+    const where = S.probe.ra === undefined ? `on ${esc(S.target.name)}, following its motion` : `${formatRa(S.probe.ra)} ${formatDec(S.probe.dec)}`;
     const head = `<div class="lab-spectrum-head"><span class="mono muted">${where}</span><button class="btn icon" data-act="probe-clear" aria-label="Clear spectrum" title="Clear">×</button></div>`;
     if (pts.length < 3) {
       el.spectrum.innerHTML = `${head}<p class="muted">${pts.length ? `Only ${pts.length} clean measurement${pts.length > 1 ? 's' : ''} here` : 'No clean measurement here'}: the spot is masked or too near the edge in most visits. Try a spot nearer the middle${S.allLoaded ? '' : ', or load every visit'}.</p>`;
@@ -1734,7 +1735,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
     items.push(...hits);
     el.suggest.hidden = !items.length;
     el.suggest.innerHTML = items
-      .map((h, i) => `<button data-sug="${i}"><b>${h.name}</b>${h.kind ? `<span class="muted"> · ${h.kind}</span>` : ''}</button>`)
+      .map((h, i) => `<button data-sug="${i}"><b>${esc(h.name)}</b>${h.kind ? `<span class="muted"> · ${esc(h.kind)}</span>` : ''}</button>`)
       .join('');
     el.suggest.onclick = (e) => {
       const b = e.target.closest('[data-sug]');

@@ -13,7 +13,17 @@ import { createShell } from './ui/shell.js';
 const app = document.getElementById('app');
 const shell = createShell(app);
 const pointingsReady = loadPointings();
-pointingsReady.then((P) => shell.setIndex(P));
+pointingsReady.then(
+  (P) => shell.setIndex(P),
+  (err) => {
+    console.error(err);
+    const note = document.createElement('div');
+    note.className = 'load-error glass';
+    note.setAttribute('role', 'alert');
+    note.textContent = 'Could not load the index of SPHEREx pointings. Check your connection and reload the page.';
+    document.body.append(note);
+  },
+);
 
 let sky = null;
 let lab = null;
@@ -22,7 +32,8 @@ async function showSky() {
   shell.setView('sky');
   if (!sky) {
     const { mountSkyView } = await import('./sky/sky-view.js');
-    const pointings = await pointingsReady;
+    const pointings = await pointingsReady.catch(() => null);
+    if (!pointings) return;
     sky = mountSkyView(shell.views.sky, {
       pointings,
       onPick: (ra, dec) => go({ view: 'lab', ra, dec }),
