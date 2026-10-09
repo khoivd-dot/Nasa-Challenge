@@ -101,9 +101,16 @@ export function createTimeMachine(parent, { tMin, tMax, times, colors, onSeek, o
   }
   function layoutTicks() {
     const w = track.clientWidth || 600;
-    const every = w < 420 ? 3 : w < 640 ? 2 : 1;
-    ticksEl.innerHTML = ticks
-      .filter((t, i) => t.year || i % every === 0)
+    // Years always; months only where they do not crowd a kept label.
+    const kept = ticks.filter((t) => t.year);
+    for (const t of ticks) {
+      if (t.year) continue;
+      const x = frac(t.mjd) * w;
+      if (x < 2 || x > w - 2) continue;
+      if (kept.every((k) => Math.abs(frac(k.mjd) * w - x) > 38)) kept.push(t);
+    }
+    kept.sort((a, b) => a.mjd - b.mjd);
+    ticksEl.innerHTML = kept
       .map((t) => `<span class="${t.year ? 'year' : ''}" style="left:${frac(t.mjd) * 100}%">${t.label}</span>`)
       .join('');
   }

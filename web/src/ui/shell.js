@@ -43,7 +43,7 @@ export function createShell(app) {
       panel.className = 'stories glass';
       panel.innerHTML = `
         <div class="stories-head">
-          <div class="label">Real SPHEREx data · Apr 2025 → Aug 2026</div>
+          <div class="label">Real data · Apr 2025 → Aug 2026</div>
           <h1>Watch the infrared sky <em>change</em>.</h1>
           <p>NASA’s SPHEREx maps the whole sky every six months. Skyblink lines up its images so anyone can blink between dates, like the astronomer who found Pluto did, and spot what moves.</p>
           <p class="stories-hint">Click anywhere on the sky to open every SPHEREx image of that spot, or start with a story:</p>
@@ -58,15 +58,18 @@ export function createShell(app) {
         </div>
         <button class="stories-toggle btn" aria-expanded="true">Hide</button>`;
       root.appendChild(panel);
+      const toggle = panel.querySelector('.stories-toggle');
+      const setCollapsed = (collapsed) => {
+        panel.classList.toggle('collapsed', collapsed);
+        toggle.textContent = collapsed ? 'Stories' : 'Hide';
+        toggle.setAttribute('aria-expanded', String(!collapsed));
+      };
+      // On phones the panel would cover the time machine, so it starts folded.
+      if (matchMedia('(max-width: 760px)').matches) setCollapsed(true);
       panel.addEventListener('click', (e) => {
         const b = e.target.closest('[data-story]');
         if (b) onOpen(STORIES.find((s) => s.id === b.dataset.story));
-        const t = e.target.closest('.stories-toggle');
-        if (t) {
-          const collapsed = panel.classList.toggle('collapsed');
-          t.textContent = collapsed ? 'Stories' : 'Hide';
-          t.setAttribute('aria-expanded', String(!collapsed));
-        }
+        if (e.target.closest('.stories-toggle')) setCollapsed(!panel.classList.contains('collapsed'));
       });
     },
   };

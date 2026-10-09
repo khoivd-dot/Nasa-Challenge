@@ -481,3 +481,8 @@
   height: 30px;
   margin-top: 8px;
 }
+
+.sky-view .seg button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

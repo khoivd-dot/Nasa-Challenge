@@ -154,6 +154,9 @@
   overflow: hidden;
   transition: transform 0.45s var(--ease), opacity 0.3s var(--ease);
 }
+.stories-head .label {
+  padding-right: 52px;
+}
 .stories-head h1 {
   font-family: var(--font-display);
   font-size: 30px;
@@ -323,6 +326,11 @@
     width: auto;
     max-height: 46%;
     padding: 16px 14px 10px;
+  }
+  .stories.collapsed {
+    top: 8px;
+    right: auto;
+    bottom: auto;
   }
   .stories-head h1 {
     font-size: 22px;

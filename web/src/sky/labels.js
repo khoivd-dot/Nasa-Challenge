@@ -47,8 +47,9 @@ export function drawOverlay(ctx, cam, o) {
     if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
   }
 
-  if (o.ecliptic) curveLabel(ctx, cam, o, ECL, 'Ecliptic', 'rgba(255, 196, 120, 0.85)', inView);
-  if (o.galactic) curveLabel(ctx, cam, o, GAL, 'Galactic plane', 'rgba(205, 160, 255, 0.85)', inView);
+  const taken = [];
+  if (o.galactic) curveLabel(ctx, cam, GAL, 'Galactic plane', 'rgba(205, 160, 255, 0.85)', inView, taken);
+  if (o.ecliptic) curveLabel(ctx, cam, ECL, 'Ecliptic', 'rgba(255, 196, 120, 0.85)', inView, taken);
 
   if (o.footprints) {
     ctx.font = `500 11px ${FONT}`;
@@ -169,7 +170,7 @@ function fmtRa(ra, step) {
   return step >= 15 ? `${h}h` : `${h}h${String(m).padStart(2, '0')}m`;
 }
 
-function curveLabel(ctx, cam, o, pts, text, color, inView) {
+function curveLabel(ctx, cam, pts, text, color, inView, taken) {
   // Place the caption at the visible sample closest to the view center.
   let best = -1;
   let bestD = Infinity;
@@ -180,6 +181,7 @@ function curveLabel(ctx, cam, o, pts, text, color, inView) {
     const p = proj[i];
     const q = proj[(i + 1) % proj.length];
     if (p.vis < 0.8 || q.vis < 0.8 || !inView(p, 60) || Math.hypot(q.x - p.x, q.y - p.y) > 200) continue;
+    if (taken.some((t) => Math.hypot(p.x - t.x, p.y - t.y) < 140)) continue;
     const d = Math.hypot(p.x - cx, p.y - cy);
     if (d < bestD) {
       bestD = d;
@@ -189,6 +191,7 @@ function curveLabel(ctx, cam, o, pts, text, color, inView) {
   if (best < 0) return;
   const p = proj[best];
   const q = proj[(best + 1) % proj.length];
+  taken.push(p);
   let ang = Math.atan2(q.y - p.y, q.x - p.x);
   if (ang > Math.PI / 2) ang -= Math.PI;
   if (ang < -Math.PI / 2) ang += Math.PI;

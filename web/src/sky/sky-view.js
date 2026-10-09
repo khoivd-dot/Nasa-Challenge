@@ -144,7 +144,8 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
     }));
   const gridLevels = { 15: null, 5: null, 1: null };
   function ensureLayer(id) {
-    if (id === 'stars' && !renderer.starVao) {
+    if (id === 'stars' && !assets.starsBusy) {
+      assets.starsBusy = true;
       loadJson('stars.json')
         .then((stars) => {
           renderer.setStars(buildStars(stars));
@@ -152,7 +153,8 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
         })
         .catch((e) => console.warn('[sky] stars', e));
     }
-    if (id === 'constellations' && !renderer.lines.constellations) {
+    if (id === 'constellations' && !assets.constBusy) {
+      assets.constBusy = true;
       loadJson('constellations.json')
         .then((c) => {
           renderer.setLine('constellations', buildConstellationLines(c.lines));
@@ -290,7 +292,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
     const timeH = tm.el.offsetHeight || 120;
     const x0 = desktop ? Math.min(LEFT_PANEL, W * 0.4) : 0;
     const focus = desktop
-      ? { x0, x1: W, y0: 8, y1: H - timeH - 28 }
+      ? { x0, x1: W - 64, y0: 8, y1: H - timeH - 28 }
       : { x0: 0, x1: W, y0: 56, y1: H - timeH - 16 };
     cam.setViewport(W, H, focus);
     renderer.resize(W, H, dpr);
@@ -434,6 +436,9 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
     pointers.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
     stopAuto();
     fly = null;
+    zoomAnchor = null;
+    zoomTarget = cam.zoom;
+    mapZoomTarget = cam.mapZoom;
     vel = { ra: 0, dec: 0, panX: 0, panY: 0, lon: 0 };
     if (pointers.size === 1) {
       drag = {
@@ -599,7 +604,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
     // Only react when focus is on the page body or inside the sky view.
     if (t && t !== document.body && t !== document.documentElement && !view.contains(t)) return;
     const fov = cam.fov();
-    const step = clamp(fov * 0.9, 1, 120);
+    const step = clamp(fov * 0.8, 1, 140);
     switch (e.key) {
       case ' ':
       case 'Spacebar':
@@ -614,14 +619,15 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
         fly = null;
         const sx = e.key === 'ArrowLeft' ? 1 : e.key === 'ArrowRight' ? -1 : 0;
         const sy = e.key === 'ArrowUp' ? 1 : e.key === 'ArrowDown' ? -1 : 0;
+        // Inertia glides ~ v / 3.2, so each press moves about a quarter of the view.
         if (state.mode === 'globe') {
-          vel.ra += (sx * step * 3) / Math.max(Math.cos(cam.dec * DEG), 0.2);
-          vel.dec += sy * step * 3;
+          vel.ra += (sx * step) / Math.max(Math.cos(cam.dec * DEG), 0.2);
+          vel.dec += sy * step;
         } else if (cam.mapZoom < 1.05 && sx) {
-          vel.lon += sx * 120;
+          vel.lon += sx * 70;
         } else {
-          vel.panX += sx * cam.S * 2;
-          vel.panY += -sy * cam.S * 1.2;
+          vel.panX += sx * cam.focusW * 0.7;
+          vel.panY += -sy * cam.focusH * 0.7;
         }
         break;
       }
@@ -860,7 +866,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
       scanStart,
       scanEnd: builtEnd,
       scanGain: 1,
-      outlineAlpha: 0.065 * smoothstep(40, 12, fov),
+      outlineAlpha: 0.04 * smoothstep(18, 5, fov),
       edge: smoothstep(25, 6, fov),
       starScale: clamp(Math.pow(cam.morph > 0.5 ? cam.mapZoom : cam.zoom, 0.22), 1, 2.2) * (W < DESKTOP_MIN ? 0.85 : 1),
       starBright: 1,

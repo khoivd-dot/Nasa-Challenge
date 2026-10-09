@@ -165,7 +165,7 @@ void main() {
     float ra = atan(d.y, d.x);
     float dec = asin(clamp(d.z, -1.0, 1.0));
     float mw = texture(uMilky, vec2(ra / TAU, dec / PI + 0.5)).r;
-    col += (vec3(0.50, 0.56, 0.80) * mw * 0.20 + vec3(0.95, 0.80, 0.62) * mw * mw * 0.10) * uMW;
+    col += (vec3(0.50, 0.57, 0.82) * mw * 0.26 + vec3(0.95, 0.80, 0.62) * mw * mw * 0.12) * uMW;
   }
 
   if (uFoot > 0.0) {
@@ -179,7 +179,7 @@ void main() {
       vec3 hue = (w.r * uPassCol[0] + w.g * uPassCol[1] + w.b * uPassCol[2] + w.a * uPassCol[3]) / (w.r + w.g + w.b + w.a);
       float I = clamp(log2(1.0 + total) / uSatLog, 0.0, 1.0);
       float cover = clamp(total, 0.0, 1.0);
-      float lum = 0.095 + 0.26 * pow(I, 1.8) + 0.04 * edge;
+      float lum = 0.115 + 0.28 * pow(I, 1.8) + 0.04 * edge;
       vec3 f = hue * lum + vec3(1.0, 0.95, 0.88) * pow(smoothstep(0.6, 1.0, I), 2.0) * 0.9;
       col += f * cover * uFoot;
     }
@@ -297,9 +297,12 @@ void main() {
   float lb = lonRel(aB);
   vec2 pa = projPx(aA, la);
   vec2 pb = projPx(aB, lb);
-  float alpha = atB ? visOf(aB) : visOf(aA);
-  if (uMorph > 0.0 && abs(la - lb) > PI) alpha *= 1.0 - smoothstep(0.0, 0.3, uMorph);
-  if (alpha <= 0.001) { gl_Position = HIDDEN; return; }
+  float va = visOf(aA);
+  float vb = visOf(aB);
+  float seam = uMorph > 0.0 && abs(la - lb) > PI ? 1.0 - smoothstep(0.0, 0.3, uMorph) : 1.0;
+  // Hide whole segments only (per-vertex hiding would tear the strip).
+  if (max(va, vb) * seam <= 0.001) { gl_Position = HIDDEN; return; }
+  float alpha = (atB ? vb : va) * seam;
   vec2 dir = pb - pa;
   float len = length(dir);
   dir = len > 1e-5 ? dir / len : vec2(1.0, 0.0);
