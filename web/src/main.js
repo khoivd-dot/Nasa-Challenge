@@ -27,8 +27,10 @@ pointingsReady.then(
 
 let sky = null;
 let lab = null;
+let current = 'sky';
 
 async function showSky() {
+  current = 'sky';
   shell.setView('sky');
   if (!sky) {
     const { mountSkyView } = await import('./sky/sky-view.js');
@@ -40,10 +42,13 @@ async function showSky() {
     });
     shell.mountStories(shell.views.sky, (story) => go({ view: 'lab', story: story.id }));
   }
-  sky.resume?.();
+  // The user may have moved on while the sky map was loading.
+  if (current === 'sky') sky.resume?.();
+  else sky.pause?.();
 }
 
 async function showLab(params) {
+  current = 'lab';
   shell.setView('lab');
   sky?.pause?.();
   if (!lab) {
@@ -54,6 +59,7 @@ async function showLab(params) {
 }
 
 function showAbout() {
+  current = 'about';
   shell.setView('about');
   sky?.pause?.();
 }

@@ -56,11 +56,23 @@ export class SkyRenderer {
     this.gl = gl;
     this.canvas = canvas;
     this.lost = false;
+    // CPU copies of the uploaded layers, replayed when a lost context comes back.
+    this.src = { lines: {} };
     canvas.addEventListener('webglcontextlost', (e) => {
       e.preventDefault();
       this.lost = true;
     });
+    canvas.addEventListener('webglcontextrestored', () => this.restore());
 
+    this.lines = {};
+    this.fp = null;
+    this.fpBuilt = 0;
+    this.cubeN = 0;
+    this.init();
+  }
+
+  init() {
+    const gl = this.gl;
     this.p = {
       sky: createProgram(gl, SHADERS.quadVs, SHADERS.skyFs, QUAD_ATTRS),
       scan: createProgram(gl, SHADERS.quadVs, SHADERS.scanFs, QUAD_ATTRS),
@@ -71,17 +83,32 @@ export class SkyRenderer {
       bg: createProgram(gl, SHADERS.bgVs, SHADERS.bgFs),
     };
     this.emptyVao = gl.createVertexArray();
-    this.lines = {};
-    this.fp = null;
-    this.fpBuilt = 0;
-    this.cubeN = 0;
     this.initCube();
     this.initMilkyWay();
   }
 
+  /** Recreate every GL object after a context loss (GPU reset, mobile tab switch). */
+  restore() {
+    const { mesh, stars, mw, lines } = this.src;
+    this.lines = {};
+    this.meshVao = this.starVao = null;
+    this.init();
+    if (mesh) this.setSkyMesh(mesh);
+    if (stars) this.setStars(stars);
+    if (mw) this.setMilkyWay(mw);
+    for (const name in lines) this.setLine(name, lines[name]);
+    if (this.fp) {
+      const built = this.fpBuilt;
+      this.setFootprints(this.fp);
+      if (built) this.uploadFootprints(0, built);
+    }
+    this.lost = false;
+  }
+
   initCube() {
     const gl = this.gl;
-    const floatOk = !!gl.getExtension('EXT_color_buffer_float');
+    // Either extension makes RGBA16F renderable; tryFormat() checks completeness.
+    const floatOk = !!(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'));
     const maxCube = gl.getParameter(gl.MAX_CUBE_MAP_TEXTURE_SIZE);
     const small = Math.min(screen.width, screen.height) < 700;
     this.cubeSize = Math.min(maxCube, small ? 512 : 1024);
@@ -148,16 +175,20 @@ export class SkyRenderer {
     this.mwReady = false;
   }
 
-  setMilkyWay({ data, width, height }) {
+  setMilkyWay(mw) {
+    const { data, width, height } = mw;
     const gl = this.gl;
+    this.src.mw = mw;
     gl.bindTexture(gl.TEXTURE_2D, this.mwTex);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, width, height, 0, gl.RED, gl.UNSIGNED_BYTE, data);
     this.mwReady = true;
   }
 
-  setSkyMesh({ data, count }) {
+  setSkyMesh(mesh) {
+    const { data, count } = mesh;
     const gl = this.gl;
+    this.src.mesh = mesh;
     this.meshBuf = createBuffer(gl, data);
     this.meshCount = count;
     this.meshVao = gl.createVertexArray();
@@ -196,6 +227,7 @@ export class SkyRenderer {
       gl.deleteBuffer(old.buf);
       gl.deleteVertexArray(old.vao);
     }
+    this.src.lines[name] = data;
     const buf = createBuffer(gl, data);
     const vao = gl.createVertexArray();
     gl.bindVertexArray(vao);
@@ -206,6 +238,7 @@ export class SkyRenderer {
 
   setStars(data) {
     const gl = this.gl;
+    this.src.stars = data;
     this.starBuf = createBuffer(gl, data);
     this.starVao = gl.createVertexArray();
     gl.bindVertexArray(this.starVao);
@@ -241,8 +274,9 @@ export class SkyRenderer {
       start = this.cubeN;
       end = Math.min(target, this.cubeN + cap);
       subtract = false;
-    } else if (target < this.cubeN - target) {
-      // Cheaper to rebuild from scratch.
+    } else if (target < this.cubeN - target || this.cubeInc !== 1) {
+      // Cheaper to rebuild from scratch. 8-bit counts saturate at 255, so
+      // subtracting from them would undercount deep fields: always rebuild.
       this.clearCube();
       if (target === 0) return true;
       start = 0;

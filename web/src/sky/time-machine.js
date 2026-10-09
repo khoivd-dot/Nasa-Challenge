@@ -180,8 +180,12 @@ export function createTimeMachine(parent, { tMin, tMax, times, colors, onSeek, o
     onSeek(tMin + f * span, true);
   };
   track.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
     dragging = true;
     track.setPointerCapture(e.pointerId);
+    // preventDefault() below also cancels the focus a click gives; without it
+    // arrow keys after a click would rotate the globe instead of stepping time.
+    track.focus({ preventScroll: true });
     el.classList.add('scrubbing');
     seekAt(e.clientX);
     e.preventDefault();
