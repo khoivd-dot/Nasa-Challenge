@@ -312,7 +312,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
     S.trailsCache = null;
     el.movers.innerHTML = '<p class="muted">Press <span class="kbd">M</span> or “Find movers” to search the loaded frames for anything that moves in a straight line.</p>';
     el.known.innerHTML = '<p class="muted">Planets and moons are marked automatically. “Known asteroids” asks the IMCCE SkyBoT service what was in view.</p>';
-    showEmpty('Searching 92,069 SPHEREx pointings…', true);
+    showEmpty(`Searching ${P.count.toLocaleString('en-US')} SPHEREx pointings…`, true);
     await new Promise((r) => setTimeout(r, 30));
     const useTrack = t.track && S.trackMode === 'track';
     let hits;

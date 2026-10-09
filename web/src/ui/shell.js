@@ -4,6 +4,7 @@
 import { STORIES } from '../lab/stories.js';
 import { searchTargets } from '../data/targets.js';
 import { parseCoords, formatRa, formatDec } from '../data/sky-math.js';
+import { mjdToDate } from '../data/pointings.js';
 
 export function createShell(app) {
   app.innerHTML = `
@@ -30,8 +31,23 @@ export function createShell(app) {
     </main>`;
 
   const views = Object.fromEntries([...app.querySelectorAll('[data-view]')].map((v) => [v.dataset.view, v]));
+  // Count and date range come from the loaded index, which the weekly deploy refreshes.
+  let indexRange = 'Apr 2025 onward';
   const shell = {
     views,
+    setIndex(P) {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let i = 0; i < P.count; i++) {
+        const m = P.mjd(i);
+        if (m < lo) lo = m;
+        if (m > hi) hi = m;
+      }
+      const month = (mjd) => mjdToDate(mjd).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+      indexRange = `${month(lo)} → ${month(hi)}`;
+      app.querySelectorAll('[data-index-range]').forEach((e) => (e.textContent = indexRange));
+      app.querySelectorAll('[data-index-count]').forEach((e) => (e.textContent = `${P.count.toLocaleString('en-US')} pointings`));
+    },
     onNavigate: null,
     setView(name) {
       for (const [k, v] of Object.entries(views)) v.hidden = k !== name;
@@ -43,7 +59,7 @@ export function createShell(app) {
       panel.className = 'stories glass';
       panel.innerHTML = `
         <div class="stories-head">
-          <div class="label">Real data · Apr 2025 → Aug 2026</div>
+          <div class="label">Real data · <span data-index-range>${indexRange}</span></div>
           <h1>Watch the infrared sky <em>change</em>.</h1>
           <p>NASA’s SPHEREx maps the whole sky every six months. Skyblink lines up its images so anyone can blink between dates, like the astronomer who found Pluto did, and spot what moves.</p>
           <p class="stories-hint">Click anywhere on the sky to open every SPHEREx image of that spot, or start with a story:</p>
@@ -124,7 +140,7 @@ const ABOUT = `
   <h2>How to use it</h2>
   <ol>
     <li><b>Pick a spot.</b> Click anywhere on the sky map, search a name or coordinates (press <span class="kbd">/</span>), or open a story.</li>
-    <li><b>Skyblink finds every SPHEREx visit</b> to that spot in its index of 92,069 pointings, then streams just the pixels it needs from NASA’s archive and aligns them north-up.</li>
+    <li><b>Skyblink finds every SPHEREx visit</b> to that spot in its index of <span data-index-count>every SPHEREx pointing</span>, then streams just the pixels it needs from NASA’s archive and aligns them north-up.</li>
     <li><b>Look for change.</b> <i>Blink</i> flips through dates. <i>Compare</i> puts two dates side by side (Flip, Swipe, or Difference, where anything that changed lights up orange or blue). <i>Trails</i> paints each date in its own color: still stars stay white, movers leave a rainbow. <i>Grid</i> shows every frame at once.</li>
     <li><b>Hunt.</b> “Find movers” searches the frames for objects moving in a straight line. “Known asteroids” asks the IMCCE SkyBoT service what was there. Shift-click an object in two frames to measure its speed.</li>
   </ol>

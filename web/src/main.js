@@ -13,6 +13,7 @@ import { createShell } from './ui/shell.js';
 const app = document.getElementById('app');
 const shell = createShell(app);
 const pointingsReady = loadPointings();
+pointingsReady.then((P) => shell.setIndex(P));
 
 let sky = null;
 let lab = null;
