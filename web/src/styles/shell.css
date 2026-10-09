@@ -1,0 +1,349 @@
+#app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  position: relative;
+  z-index: 30;
+  height: var(--topbar-h);
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 0 18px;
+  border-radius: 0;
+  border-width: 0 0 1px;
+  box-shadow: none;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  text-decoration: none !important;
+}
+.brand-mark {
+  position: relative;
+  width: 28px;
+  height: 28px;
+}
+.brand-mark i {
+  position: absolute;
+  top: 7px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 0 25%, var(--accent) 45%, transparent 72%);
+}
+.brand-mark i:first-child {
+  left: 0;
+  animation: blink-a 2.4s infinite steps(1);
+}
+.brand-mark i:last-child {
+  left: 13px;
+  background: radial-gradient(circle, #fff 0 25%, var(--survey-3) 45%, transparent 72%);
+  animation: blink-b 2.4s infinite steps(1);
+}
+@keyframes blink-a {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}
+@keyframes blink-b {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.brand-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+.brand-tag {
+  font-size: 12px;
+  color: var(--text-3);
+  border-left: 1px solid var(--panel-border-strong);
+  padding-left: 10px;
+}
+
+.nav {
+  display: flex;
+  gap: 4px;
+}
+.nav a {
+  color: var(--text-2);
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 0.2s var(--ease), background 0.2s var(--ease);
+}
+.nav a:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+.nav a.on {
+  color: #fff;
+  background: rgba(92, 225, 255, 0.14);
+}
+
+.top-search {
+  position: relative;
+  margin-left: auto;
+  width: min(320px, 32vw);
+}
+.top-suggest {
+  position: absolute;
+  top: 46px;
+  left: 0;
+  right: 0;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+}
+.top-suggest button {
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13.5px;
+}
+.top-suggest button:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.views {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.view {
+  position: absolute;
+  inset: 0;
+}
+.view[hidden] {
+  display: none;
+}
+
+/* Stories panel floating over the sky map */
+.stories {
+  position: absolute;
+  z-index: 10;
+  top: 16px;
+  left: 16px;
+  bottom: 16px;
+  width: 348px;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 18px 14px;
+  overflow: hidden;
+  transition: transform 0.45s var(--ease), opacity 0.3s var(--ease);
+}
+.stories-head .label {
+  padding-right: 52px;
+}
+.stories-head h1 {
+  font-family: var(--font-display);
+  font-size: 30px;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  margin: 8px 0 10px;
+}
+.stories-head h1 em {
+  font-style: normal;
+  background: linear-gradient(90deg, var(--survey-1), var(--survey-2) 55%, var(--survey-3));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.stories-head p {
+  color: var(--text-2);
+  font-size: 14px;
+  margin: 0 0 10px;
+}
+.stories-hint {
+  color: var(--text-3) !important;
+  font-size: 13px !important;
+}
+.stories-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 2px 8px;
+  scrollbar-width: thin;
+}
+.story {
+  position: relative;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 14px 12px 18px;
+  border-radius: 12px;
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.025);
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.2s var(--ease), background 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+.story::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.story:hover {
+  transform: translateX(3px);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--panel-border-strong);
+}
+.story-kicker {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+}
+.story-title {
+  font-family: var(--font-display);
+  font-size: 16.5px;
+  font-weight: 500;
+}
+.stories-toggle {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  height: 28px;
+  font-size: 12px;
+  padding: 0 10px;
+}
+.stories.collapsed {
+  bottom: auto;
+  width: auto;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+.stories.collapsed > :not(.stories-toggle) {
+  display: none;
+}
+.stories.collapsed .stories-toggle {
+  position: static;
+  background: var(--panel);
+  backdrop-filter: var(--blur);
+}
+
+/* About page */
+.view-about {
+  overflow-y: auto;
+  background:
+    radial-gradient(900px 500px at 80% 0%, rgba(180, 140, 255, 0.12), transparent 70%),
+    radial-gradient(900px 500px at 0% 30%, rgba(92, 225, 255, 0.08), transparent 70%),
+    var(--bg);
+}
+.about {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 48px 24px 80px;
+}
+.about h1 {
+  font-family: var(--font-display);
+  font-size: clamp(30px, 5vw, 44px);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  margin: 10px 0 16px;
+}
+.about h2 {
+  font-family: var(--font-display);
+  font-size: 21px;
+  margin: 36px 0 10px;
+}
+.about .lede {
+  font-size: 17px;
+  color: var(--text-2);
+}
+.about li {
+  margin: 8px 0;
+  color: var(--text-2);
+}
+.about li b {
+  color: var(--text);
+}
+.about p {
+  color: var(--text-2);
+}
+
+@media (max-width: 900px) {
+  .brand-tag {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .topbar {
+    gap: 10px;
+    padding: 0 10px;
+  }
+  .nav a {
+    padding: 6px 9px;
+    font-size: 13px;
+  }
+  .brand-name {
+    display: none;
+  }
+  .top-search {
+    width: auto;
+    flex: 1;
+  }
+  .stories {
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: auto;
+    max-height: 46%;
+    padding: 16px 14px 10px;
+  }
+  .stories.collapsed {
+    top: 8px;
+    right: auto;
+    bottom: auto;
+  }
+  .stories-head h1 {
+    font-size: 22px;
+  }
+  .stories-head p:not(.stories-hint) {
+    display: none;
+  }
+  .stories-list {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .story {
+    min-width: 200px;
+  }
+}
