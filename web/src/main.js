@@ -1,9 +1,7 @@
-import '@fontsource/inter/400.css';
-import '@fontsource/inter/500.css';
-import '@fontsource/inter/600.css';
-import '@fontsource/space-grotesk/500.css';
-import '@fontsource/space-grotesk/700.css';
-import '@fontsource/jetbrains-mono/400.css';
+import '@fontsource-variable/archivo/wdth.css';
+import '@fontsource-variable/atkinson-hyperlegible-next/wght.css';
+import '@fontsource/overpass-mono/400.css';
+import '@fontsource/overpass-mono/600.css';
 import './styles/base.css';
 import './styles/shell.css';
 
@@ -27,11 +25,13 @@ pointingsReady.then(
 
 let sky = null;
 let lab = null;
+let about = null;
 let current = 'sky';
 
 async function showSky(mode) {
   current = 'sky';
   shell.setView('sky');
+  about?.hide();
   if (!sky) {
     const { mountSkyView } = await import('./sky/sky-view.js');
     const pointings = await pointingsReady.catch(() => null);
@@ -58,6 +58,7 @@ async function showLab(params) {
   current = 'lab';
   shell.setView('lab');
   sky?.pause?.();
+  about?.hide();
   if (!lab) {
     const { mountLab } = await import('./lab/lab.js');
     lab = mountLab(shell.views.lab, { pointingsReady, onBack: () => go({ view: 'sky' }) });
@@ -65,10 +66,15 @@ async function showLab(params) {
   lab.open(params).catch((err) => console.error('Could not open the Lab:', err));
 }
 
-function showAbout() {
+async function showAbout() {
   current = 'about';
   shell.setView('about');
   sky?.pause?.();
+  if (!about) {
+    const { mountAbout } = await import('./ui/about.js');
+    about = mountAbout(shell.views.about, { pointingsReady });
+  }
+  if (current === 'about') about.show();
 }
 
 // Routes live in the hash so links are shareable: #/lab?ra=..&dec=.., #/lab?story=pluto,

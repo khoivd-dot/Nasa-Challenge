@@ -31,7 +31,7 @@
   cursor: grabbing;
 }
 .sky-canvas:focus-visible {
-  box-shadow: inset 0 0 0 2px rgba(92, 225, 255, 0.5);
+  box-shadow: inset 0 0 0 2px rgba(255, 178, 62, 0.6);
 }
 .sky-overlay {
   pointer-events: none;
@@ -85,7 +85,7 @@
   gap: 7px;
   height: 28px;
   padding: 0 11px 0 9px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--panel-border);
   background: rgba(255, 255, 255, 0.025);
   color: var(--text-3);
@@ -193,8 +193,6 @@
 }
 .sky-zoom .btn {
   background: var(--panel);
-  backdrop-filter: var(--blur);
-  -webkit-backdrop-filter: var(--blur);
   color: var(--text-2);
 }
 .sky-zoom .btn:hover {
@@ -255,7 +253,7 @@
   position: relative;
   height: 36px;
   margin-top: 12px;
-  border-radius: 8px;
+  border-radius: 2px;
   background: rgba(0, 0, 0, 0.28);
   cursor: pointer;
   touch-action: none;
@@ -270,7 +268,7 @@
   inset: 0;
   width: 100%;
   height: 100%;
-  border-radius: 8px;
+  border-radius: 2px;
 }
 .sky-bands {
   overflow: hidden;
@@ -303,7 +301,7 @@
   bottom: 0;
   height: 2px;
   border-radius: 2px;
-  background: linear-gradient(90deg, rgba(92, 225, 255, 0.2), var(--accent));
+  background: var(--accent);
   pointer-events: none;
 }
 .sky-head {
@@ -312,9 +310,9 @@
   bottom: -3px;
   width: 2px;
   margin-left: -1px;
-  border-radius: 2px;
-  background: #fff;
-  box-shadow: 0 0 12px rgba(92, 225, 255, 0.9);
+  border-radius: 1px;
+  background: var(--text);
+  box-shadow: 0 0 10px rgba(255, 178, 62, 0.8);
   pointer-events: none;
 }
 .sky-head-dot {
@@ -326,7 +324,7 @@
   margin-left: -5.5px;
   border-radius: 50%;
   background: #fff;
-  box-shadow: 0 0 0 3px rgba(92, 225, 255, 0.35), 0 0 14px rgba(92, 225, 255, 0.8);
+  box-shadow: 0 0 0 3px rgba(255, 178, 62, 0.35), 0 0 12px rgba(255, 178, 62, 0.7);
   transition: transform 0.15s var(--ease);
 }
 .sky-time.scrubbing .sky-head-dot,
@@ -361,7 +359,7 @@
   border-radius: 50%;
   pointer-events: none;
   border: 2px solid var(--accent);
-  box-shadow: 0 0 14px rgba(92, 225, 255, 0.7);
+  box-shadow: 0 0 14px rgba(255, 178, 62, 0.7);
   animation: sky-ripple 0.85s var(--ease) forwards;
 }
 .sky-ripple::after {
@@ -531,8 +529,8 @@
   width: 28px;
   height: 28px;
   padding: 0;
-  border-radius: 50%;
-  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--panel-border-strong);
   background: rgba(255, 255, 255, 0.03);
   color: var(--text-2);
   cursor: pointer;
@@ -551,7 +549,7 @@
   height: 36px;
   max-width: 190px;
   padding: 0 30px 0 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--panel-border-strong);
   background: rgba(0, 0, 0, 0.25)
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6' fill='none' stroke='%23a9b3d6' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E")
@@ -584,7 +582,7 @@
 .sky-gshade {
   position: absolute;
   inset: 0;
-  border-radius: 8px;
+  border-radius: 2px;
   opacity: 0.9;
 }
 .sky-gticks span.year {

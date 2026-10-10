@@ -28,7 +28,7 @@ export function createShell(app) {
     <main class="views">
       <section class="view" data-view="sky" hidden></section>
       <section class="view" data-view="lab" hidden></section>
-      <section class="view view-about" data-view="about" hidden>${ABOUT}</section>
+      <section class="view view-about" data-view="about" hidden></section>
     </main>`;
 
   const views = Object.fromEntries([...app.querySelectorAll('[data-view]')].map((v) => [v.dataset.view, v]));
@@ -132,38 +132,3 @@ export function createShell(app) {
   });
   return shell;
 }
-
-const ABOUT = `
-<article class="about">
-  <div class="label">About Skyblink</div>
-  <h1>A blink comparator for the whole infrared sky</h1>
-  <p class="lede">In 1930 Clyde Tombaugh found Pluto, the original “Planet X”, by flipping back and forth between two photographs of the same stars taken days apart. Anything that jumped was a candidate. Skyblink brings that method to NASA’s SPHEREx mission, which has photographed the entire sky in 102 infrared colors every six months since May 2025.</p>
-
-  <h2>How to use it</h2>
-  <ol>
-    <li><b>Pick a spot.</b> Click anywhere on the sky map, search a name or coordinates (press <span class="kbd">/</span>), or open a story.</li>
-    <li><b>Skyblink finds every SPHEREx visit</b> to that spot in its index of <span data-index-count>every SPHEREx pointing</span>, then streams just the pixels it needs from NASA’s archive and aligns them north-up.</li>
-    <li><b>Look for change.</b> <i>Blink</i> flips through dates. <i>Compare</i> puts two dates side by side (Flip, Swipe, or Difference, where anything that changed lights up orange or blue). <i>Trails</i> paints each date in its own color: still stars stay white, movers leave a rainbow. <i>Grid</i> shows every frame at once.</li>
-    <li><b>Look up from home.</b> Switch the sky map to <i>From Earth</i> to see the sky from your city at any time: the horizon, the Moon and planets, and where SPHEREx has looked. Tap a planet to follow it through SPHEREx’s images.</li>
-    <li><b>Hunt.</b> “Find movers” searches the frames for objects moving in a straight line. “Known asteroids” asks the IMCCE SkyBoT service what was there. Shift-click an object in two frames to measure its speed.</li>
-  </ol>
-
-  <h2>Where the data comes from</h2>
-  <ul>
-    <li><b>Images:</b> SPHEREx Level 2 calibrated spectral images (Quick Release 2 and 3, pipeline versions 6.4 to 7.0) from NASA/IPAC Infrared Science Archive (IRSA), read live from the public AWS bucket <span class="mono">nasa-irsa-spherex</span>. Nothing is resampled or retouched beyond aligning frames and masking pixels the SPHEREx pipeline flags as bad.</li>
-    <li><b>Pointing index:</b> built by <span class="mono">pipeline/build_index.py</span> from the FITS header of one detector-1 file per pointing (sky position, roll and mid-exposure time). Detector 2 and 3 offsets and the sub-exposure step are measured from real headers.</li>
-    <li><b>Wavelengths:</b> each frame’s wavelength comes from the file’s own WCS-WAVE table. SPHEREx uses linear variable filters, so a star’s wavelength depends on where it lands on the detector; brightness changes between frames are often color, not variability.</li>
-    <li><b>Planets, Pluto and Jupiter’s moons:</b> Astronomy Engine (VSOP87 and JPL-fitted models). <b>Star positions and proper motions:</b> SIMBAD and Gaia catalog values. <b>Background stars and constellations:</b> the Hipparcos catalog via d3-celestial.</li>
-    <li><b>Known asteroids:</b> SkyBoT, IMCCE / Paris Observatory, queried live.</li>
-  </ul>
-
-  <h2>Good to know</h2>
-  <ul>
-    <li>Each frame is 2 minutes of exposure. SPHEREx pixels are 6.15″, so a star needs to move about 6″ to shift one pixel: Barnard’s Star does that in about seven months.</li>
-    <li>Asteroids move several pixels per hour. Their best chance is a survey pass where SPHEREx revisited the field hours apart.</li>
-    <li>Very bright objects (planets, bright stars) saturate and bloom. That is the detector, not the sky.</li>
-  </ul>
-
-  <h2>Credits</h2>
-  <p>SPHEREx is a NASA mission led by Caltech, managed by JPL; data courtesy NASA/JPL-Caltech/IPAC. Built for the NASA Space Apps Challenge “Planet X and SPHEREx”. Open source: see the repository for the full plan, the data pipeline, and tests.</p>
-</article>`;

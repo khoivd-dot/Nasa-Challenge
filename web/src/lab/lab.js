@@ -155,7 +155,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
           <button data-val="diff" aria-pressed="false">Difference</button>
         </div>
         <div class="lab-tool-right">
-          <button class="btn" data-act="movers" title="Search for moving objects (M)">✦ Find movers</button>
+          <button class="btn" data-act="movers" title="Search for moving objects (M)">Find movers</button>
           <button class="btn" data-act="skybot" title="Ask IMCCE SkyBoT which known asteroids and comets were in this frame">Known asteroids</button>
           <button class="btn icon" data-act="reset" title="Reset zoom (0)" aria-label="Reset zoom">${ICON.reset}</button>
         </div>
@@ -730,7 +730,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
         ctx.lineWidth = 2;
         ctx.stroke();
         ctx.fillStyle = '#fff';
-        ctx.font = '600 11px Inter, sans-serif';
+        ctx.font = '600 11px "Archivo Variable", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('⟷', sx, hy + 1);
@@ -753,7 +753,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
   }
 
   function label(x, y, text, align = 'left', color = '#fff') {
-    ctx.font = '500 12px Inter, sans-serif';
+    ctx.font = '500 12px "Archivo Variable", sans-serif';
     ctx.textAlign = align;
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 3;
@@ -907,7 +907,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
     ctx.moveTo(x, y);
     ctx.lineTo(x - 26, y);
     ctx.stroke();
-    ctx.font = '600 10px Inter, sans-serif';
+    ctx.font = '600 10px "Archivo Variable", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('N', x, y - 34);
