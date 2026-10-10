@@ -192,6 +192,7 @@
 }
 .story {
   position: relative;
+  flex-shrink: 0;
   text-align: left;
   display: flex;
   flex-direction: column;
@@ -218,6 +219,22 @@
   transform: translateX(3px);
   background: rgba(255, 255, 255, 0.06);
   border-color: var(--panel-border-strong);
+}
+.story.first {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.story-start {
+  align-self: flex-start;
+  margin-bottom: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #050714;
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 2px 8px;
 }
 .story-kicker {
   font-size: 11px;
@@ -324,8 +341,10 @@
     right: 8px;
     bottom: 8px;
     width: auto;
-    max-height: 46%;
+    max-height: 62%;
     padding: 16px 14px 10px;
+    /* Solid, so the sky controls underneath do not show through the text. */
+    background: rgba(9, 12, 28, 0.97);
   }
   .stories.collapsed {
     top: 8px;
@@ -334,9 +353,11 @@
   }
   .stories-head h1 {
     font-size: 22px;
+    padding-right: 64px; /* clear of the Hide button */
   }
-  .stories-head p:not(.stories-hint) {
-    display: none;
+  .stories-head p {
+    font-size: 13.5px;
+    margin-bottom: 8px;
   }
   .stories-list {
     flex-direction: row;

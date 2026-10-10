@@ -29,7 +29,7 @@ let sky = null;
 let lab = null;
 let current = 'sky';
 
-async function showSky() {
+async function showSky(mode) {
   current = 'sky';
   shell.setView('sky');
   if (!sky) {
@@ -38,13 +38,20 @@ async function showSky() {
     if (!pointings) return;
     sky = mountSkyView(shell.views.sky, {
       pointings,
-      onPick: (ra, dec) => go({ view: 'lab', ra, dec }),
+      // A planet picked in the From Earth view opens the Lab following it.
+      onPick: (ra, dec, extra) => go(extra?.body ? { view: 'lab', body: extra.body } : { view: 'lab', ra, dec }),
+      // Keep the address shareable without adding history entries.
+      onMode: (m) => {
+        if (current === 'sky') history.replaceState(null, '', m === 'ground' ? '#/earth' : '#/sky');
+      },
     });
     shell.mountStories(shell.views.sky, (story) => go({ view: 'lab', story: story.id }));
   }
   // The user may have moved on while the sky map was loading.
-  if (current === 'sky') sky.resume?.();
-  else sky.pause?.();
+  if (current === 'sky') {
+    sky.resume?.();
+    if (mode) sky.setMode(mode);
+  } else sky.pause?.();
 }
 
 async function showLab(params) {
@@ -64,7 +71,8 @@ function showAbout() {
   sky?.pause?.();
 }
 
-// Routes live in the hash so links are shareable: #/lab?ra=..&dec=.. or #/lab?story=pluto
+// Routes live in the hash so links are shareable: #/lab?ra=..&dec=.., #/lab?story=pluto,
+// #/earth (the sky from the ground)
 function parseHash() {
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?');
   const q = Object.fromEntries(new URLSearchParams(query));
@@ -89,7 +97,7 @@ function route() {
     if (p.dec !== undefined) params.dec = parseFloat(p.dec);
     showLab(params);
   } else if (p.view === 'about') showAbout();
-  else showSky();
+  else showSky(p.view === 'earth' ? 'ground' : null);
 }
 
 shell.onNavigate = go;

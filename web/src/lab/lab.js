@@ -19,6 +19,19 @@ import { queryKnownObjects } from './skybot.js';
 import { drizzle, paintColor } from './deep.js';
 import { lookupWave } from '../fits/spherex.js';
 
+// One plain sentence per view, shown under the toolbar (tooltips never show on touch screens).
+const MODE_HINT = {
+  blink: 'Flips through the dates. Anything that jumps moved; still stars stay put.',
+  compare: {
+    flip: 'Flips between two dates. Shift-click a dot on the timeline to pick the second date.',
+    swipe: 'Drag across the image to wipe from one date to the other.',
+    diff: 'Subtracts two dates: what got brighter glows, what faded goes dark. Steady stars vanish.',
+  },
+  trails: 'Each date gets its own color. Still stars add up to white; anything that moved leaves a rainbow of dots.',
+  grid: 'Every visit side by side, oldest first.',
+  deep: 'All visits stacked into one sharper, deeper picture. Moving things blur out.',
+};
+
 const SIZES = [
   { px: 64, label: '6′' },
   { px: 112, label: '11′' },
@@ -147,6 +160,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
           <button class="btn icon" data-act="reset" title="Reset zoom (0)" aria-label="Reset zoom">${ICON.reset}</button>
         </div>
       </div>
+      <p class="lab-mode-hint" aria-live="polite"></p>
       <div class="lab-stage">
         <canvas class="lab-canvas" tabindex="0" aria-label="SPHEREx image viewer"></canvas>
         <div class="lab-hud lab-hud-tl mono"></div>
@@ -210,6 +224,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
     coords: $('.lab-coords'),
     blurb: $('.lab-blurb'),
     tip: $('.lab-tip'),
+    modeHint: $('.lab-mode-hint'),
     passes: $('.lab-passes'),
     count: $('.lab-count'),
     more: $('.lab-more'),
@@ -325,9 +340,12 @@ export function mountLab(root, { pointingsReady, onBack }) {
     const target = resolve(params);
     S.target = target;
     S.size = target.size || SIZES.find((s) => s.px === +params.size)?.px || 112;
+    // Phones: a 20′ story cutout is ~65 MB of pixels; 11′ still shows the motion.
+    if (!params.size && S.size > 112 && matchMedia('(max-width: 760px)').matches) S.size = 112;
     S.trackMode = target.trackMode || 'track';
     S.fixedPass = 'best';
-    S.autoplay = !!target.story?.autoplay;
+    // Stories choose; everything else starts flipping through dates right away.
+    S.autoplay = target.story ? !!target.story.autoplay : true;
     if (target.story?.view) S.mode = target.story.view;
     else if (params.story || params.body || params.target) S.mode = 'blink';
     if (params.band === 'lw' || params.band === 'sw') S.band = params.band;
@@ -773,7 +791,11 @@ export function mountLab(root, { pointingsReady, onBack }) {
       }
     }
     // Ephemeris overlays (planets, moons, proper-motion predictions)
-    const overlaySet = S.mode === 'trails' ? list.flatMap((g, i) => g.overlays.filter((o) => o.kind === 'star').map((o) => ({ ...o, color: g.color, idx: i }))) : f.overlays;
+    // Trails: proper-motion stars and the tracked body get one ring per date, in that date's color.
+    const overlaySet =
+      S.mode === 'trails'
+        ? list.flatMap((g, i) => g.overlays.filter((o) => o.kind === 'star' || (o.kind === 'planet' && o.name === tgt.body)).map((o) => ({ ...o, color: g.color, idx: i, last: i === list.length - 1 })))
+        : f.overlays;
     for (const o of overlaySet) {
       const p = skyToFrame(f.frame, o.ra, o.dec);
       if (!p || p[0] < -2 || p[1] < -2 || p[0] > N + 1 || p[1] > N + 1) continue;
@@ -785,6 +807,13 @@ export function mountLab(root, { pointingsReady, onBack }) {
         ctx.arc(x, y, Math.max(6, 1.6 * k), 0, Math.PI * 2);
         ctx.stroke();
         if (!o.color) label(x + Math.max(9, 2 * k), y - Math.max(9, 2 * k), `${o.name} (predicted)`, 'left', '#ffd9a8');
+      } else if (o.color) {
+        ctx.strokeStyle = `rgb(${o.color.map(Math.round).join(',')})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(x, y, 9, 0, Math.PI * 2);
+        ctx.stroke();
+        if (o.last) label(x + 12, y - 11, o.name, 'left', '#ffd9a8');
       } else {
         // The tracked body already sits under the reticle.
         if (o.kind === 'planet' && tgt.body === o.name && S.trackMode === 'track') continue;
@@ -1011,10 +1040,11 @@ export function mountLab(root, { pointingsReady, onBack }) {
   function renderHud(f, list) {
     const prev = list[S.cur - 1];
     const dt = prev ? fmtDelta((f.frame.mjd - prev.frame.mjd) * 24) : '—';
-    const lambda = f.frame.lambda ? `${f.frame.lambda.toFixed(2)} µm` : '';
-    el.hudTL.innerHTML = `<b>${fmtDate(f.frame.mjd)}</b><br>${lambda} · D${f.frame.detector} · Δt ${dt}`;
+    // Wavelength and detector live in the "This frame" panel; the HUD speaks dates.
+    el.hudTL.innerHTML = `<b>${fmtDate(f.frame.mjd)}</b><br>${prev ? `${dt} after the last frame` : 'first visit'}`;
     el.hudBL.textContent = `Frame ${S.cur + 1} / ${list.length}${S.mode === 'compare' ? ` · base ${S.base + 1}` : ''}`;
     const modeName = { blink: 'Blink', compare: { flip: 'Flip', swipe: 'Swipe', diff: 'Difference' }[S.cmp], trails: 'Trails', grid: 'Grid', deep: 'Deep' }[S.mode];
+    el.modeHint.textContent = S.mode === 'compare' ? MODE_HINT.compare[S.cmp] : MODE_HINT[S.mode];
     if (S.mode === 'deep') return renderDeepHud(f, list, modeName);
     el.hudTR.innerHTML = `<span class="lab-chip">${modeName}</span>${S.mode === 'trails' ? trailLegend(list) : ''}${S.mode === 'compare' && S.cmp === 'diff' ? '<span class="lab-diff-legend"><i class="neg"></i>fainter <i class="pos"></i>brighter</span>' : ''}${S.mode === 'compare' && S.cmp === 'swipe' ? `<span class="lab-diff-legend">◀ ${fmtDay(list[S.base].frame.mjd)} │ ${fmtDay(f.frame.mjd)} ▶</span>` : ''}`;
     renderFrameInfo(f, list);
@@ -1079,8 +1109,12 @@ export function mountLab(root, { pointingsReady, onBack }) {
       ? `${esc(t.name)} · moving target<br><span class="muted">${S.visits.length ? `${S.visits.length} SPHEREx pointings caught it` : ''}</span>`
       : `${formatRa(t.ra)}  ${formatDec(t.dec)}<br><span class="muted">l ${l.toFixed(2)}°  b ${b.toFixed(2)}°${S.visits.length ? ` · ${S.visits.length} pointings` : ''}</span>`;
     el.blurb.textContent = story ? story.blurb : t.alt ? `${t.alt} · ${t.kicker}` : 'Every SPHEREx frame that covers this point, aligned north-up so you can see what changed.';
-    el.tip.textContent = story?.tip || '';
-    el.tip.hidden = !story?.tip;
+    el.tip.textContent =
+      story?.tip ||
+      (t.body
+        ? `${t.name} stays in the middle while the stars stream past. Under Follow, pick "Fix stars" to watch it move instead.${['Mars', 'Jupiter', 'Saturn'].includes(t.body) ? ' Planets this bright overexpose SPHEREx, so they show as a white blob.' : ''}`
+        : 'Anything that jumps between dates moved. Still stars stay put; switch to Trails to see motion as a rainbow of dots.');
+    el.tip.hidden = false;
     el.trackBlock.hidden = !t.track;
     const fp = S.trackMode === 'fixed' && S.trackPasses?.length > 1;
     el.fixedPasses.hidden = !fp;
@@ -1349,6 +1383,39 @@ export function mountLab(root, { pointingsReady, onBack }) {
       draw();
     }
   });
+
+  // Touch: drag along the frame dots to scrub (the dots are too small to tap one by one).
+  let scrubbing = false;
+  const scrubTo = (x) => {
+    let best = -1;
+    let bestD = Infinity;
+    for (const d of el.track.querySelectorAll('.lab-dot')) {
+      const i = +d.dataset.idx;
+      if (i < 0) continue;
+      const r = d.getBoundingClientRect();
+      const dx = Math.abs(r.left + r.width / 2 - x);
+      if (dx < bestD) {
+        bestD = dx;
+        best = i;
+      }
+    }
+    if (best >= 0 && best !== S.cur) {
+      stop();
+      S.cur = best;
+      renderTimeline();
+      draw();
+    }
+  };
+  el.track.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') return;
+    scrubbing = true;
+    el.track.setPointerCapture(e.pointerId);
+    scrubTo(e.clientX);
+  });
+  el.track.addEventListener('pointermove', (e) => {
+    if (scrubbing) scrubTo(e.clientX);
+  });
+  for (const type of ['pointerup', 'pointercancel']) el.track.addEventListener(type, () => (scrubbing = false));
 
   root.querySelectorAll('[data-ctl]').forEach((input) =>
     input.addEventListener('input', () => {

@@ -67,7 +67,8 @@ export function createShell(app) {
         </div>
         <div class="stories-list">
           ${STORIES.map(
-            (s) => `<button class="story" data-story="${s.id}" style="--accent:${s.accent}">
+            (s, i) => `<button class="story${i === 0 ? ' first' : ''}" data-story="${s.id}" style="--accent:${s.accent}">
+              ${i === 0 ? '<span class="story-start">Start here</span>' : ''}
               <span class="story-kicker">${s.kicker}</span>
               <span class="story-title">${s.title}</span>
             </button>`,
@@ -81,8 +82,8 @@ export function createShell(app) {
         toggle.textContent = collapsed ? 'Stories' : 'Hide';
         toggle.setAttribute('aria-expanded', String(!collapsed));
       };
-      // On phones the panel would cover the time machine, so it starts folded.
-      if (matchMedia('(max-width: 760px)').matches) setCollapsed(true);
+      // Phones start with the panel open too: it is the only thing that says
+      // what this is. "Hide" folds it to a small "Stories" button.
       panel.addEventListener('click', (e) => {
         const b = e.target.closest('[data-story]');
         if (b) onOpen(STORIES.find((s) => s.id === b.dataset.story));
@@ -143,6 +144,7 @@ const ABOUT = `
     <li><b>Pick a spot.</b> Click anywhere on the sky map, search a name or coordinates (press <span class="kbd">/</span>), or open a story.</li>
     <li><b>Skyblink finds every SPHEREx visit</b> to that spot in its index of <span data-index-count>every SPHEREx pointing</span>, then streams just the pixels it needs from NASA’s archive and aligns them north-up.</li>
     <li><b>Look for change.</b> <i>Blink</i> flips through dates. <i>Compare</i> puts two dates side by side (Flip, Swipe, or Difference, where anything that changed lights up orange or blue). <i>Trails</i> paints each date in its own color: still stars stay white, movers leave a rainbow. <i>Grid</i> shows every frame at once.</li>
+    <li><b>Look up from home.</b> Switch the sky map to <i>From Earth</i> to see the sky from your city at any time: the horizon, the Moon and planets, and where SPHEREx has looked. Tap a planet to follow it through SPHEREx’s images.</li>
     <li><b>Hunt.</b> “Find movers” searches the frames for objects moving in a straight line. “Known asteroids” asks the IMCCE SkyBoT service what was there. Shift-click an object in two frames to measure its speed.</li>
   </ol>
 

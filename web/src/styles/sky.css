@@ -471,7 +471,7 @@
   min-width: 0;
 }
 .sky-view.narrow .sky-speed {
-  margin-left: 0;
+  display: none;
 }
 .sky-view.narrow .sky-speed button {
   padding: 4px 8px;
@@ -485,4 +485,150 @@
 .sky-view .seg button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
+}
+
+/* ---------------------------------------------------------- from Earth -- */
+.sky-canvas,
+.sky-overlay {
+  transition: opacity 0.18s var(--ease);
+}
+.sky-view.switching .sky-canvas,
+.sky-view.switching .sky-overlay {
+  opacity: 0;
+}
+.sky-view:not(.ground) .sky-ro-hor-row {
+  display: none;
+}
+.sky-proj button[data-mode='ground'] {
+  white-space: nowrap;
+}
+.sky-gbar-row {
+  flex-wrap: wrap;
+  gap: 10px 18px;
+}
+.sky-gwhen {
+  min-width: 0;
+}
+.sky-gwhen-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sky-gtime {
+  font-size: 18px;
+  color: var(--text);
+  min-width: 5ch;
+}
+.sky-gday {
+  font-size: 12.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.sky-gstep {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-2);
+  cursor: pointer;
+}
+.sky-gstep:hover {
+  color: var(--text);
+  border-color: var(--panel-border-strong);
+}
+.sky-gwhere {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.sky-gplace {
+  height: 36px;
+  max-width: 190px;
+  padding: 0 30px 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border-strong);
+  background: rgba(0, 0, 0, 0.25)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6' fill='none' stroke='%23a9b3d6' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E")
+    no-repeat right 11px center;
+  color: var(--text);
+  font-size: 13.5px;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+.sky-gplace option {
+  background: #0d1124;
+  color: var(--text);
+}
+.sky-glocate.busy svg {
+  animation: sky-pulse 1s ease-in-out infinite;
+}
+@keyframes sky-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+.sky-gjump {
+  flex: none;
+}
+.sky-gjump button {
+  font-size: 12.5px;
+  padding: 6px 12px;
+}
+.sky-gshade {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  opacity: 0.9;
+}
+.sky-gticks span.year {
+  color: var(--text-2);
+}
+.sky-gnote {
+  margin: 2px 0 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+.sky-view.narrow .sky-gbar-row {
+  gap: 8px 10px;
+}
+.sky-view.narrow .sky-gtime {
+  font-size: 15px;
+}
+.sky-view.narrow .sky-gday {
+  font-size: 11.5px;
+}
+.sky-view.narrow .sky-gwhere {
+  margin-left: 0;
+  flex: 1 1 150px;
+  min-width: 0;
+}
+.sky-view.narrow .sky-gjump button {
+  padding: 6px 10px;
+}
+.sky-view.narrow .sky-gplace {
+  flex: 1 1 auto;
+  max-width: none;
+  min-width: 0;
+}
+.sky-view.narrow .sky-gnote {
+  font-size: 11.5px;
+  margin-bottom: 4px;
+}
+
+.sky-time-cap {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.sky-view.narrow .sky-time-cap {
+  margin-top: 6px;
+  font-size: 11.5px;
 }

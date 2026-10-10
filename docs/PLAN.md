@@ -16,6 +16,7 @@ In 1930 Clyde Tombaugh found Pluto, the original "Planet X", with a **blink comp
    - **Known asteroids**: IMCCE SkyBoT lookup.
    - **Measure**: Shift-click an object in two frames to get its speed.
 3. **Stories.** Guided starts that are verified to show real change: Pluto crawling across fixed stars, Neptune, Uranus, Barnard's Star's proper motion, the Luhman 16 brown dwarfs, the north ecliptic pole deep field, and Orion in infrared.
+4. **From Earth.** The same map as the night sky seen from where you stand: pick a city (guessed from the browser's time zone, no permission needed) or use the device location, then drag through the night on a slider shaded by the Sun's altitude. Shows the horizon, compass points, twilight or daylight, the Sun, the Moon with its phase, the planets and Pluto, and SPHEREx coverage up to that date. Tap a planet to follow it in the Lab. Link: `#/earth`.
 
 ## Data strategy (verified in this session)
 
@@ -47,7 +48,7 @@ web/ (Vite, vanilla JS)
   src/fits/      range reader, FITS header, TAN-SIP WCS, Rice, SPHEREx file
   src/data/      pointing index, sky math, survey calendar, named targets
   src/lab/       cutouts + reprojection, render pipelines, mover finder, ephemerides, stories, Lab UI
-  src/sky/       WebGL sky map and time machine
+  src/sky/       WebGL sky map, time machine, From Earth view (ground.js: horizon frame, Sun/Moon/planets, local time)
   tests/         engine tests against astropy fixtures
 .github/workflows/deploy.yml  build + test + deploy to GitHub Pages; weekly index refresh
 ```
