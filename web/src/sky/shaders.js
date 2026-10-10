@@ -150,7 +150,7 @@ vec3 skyLayers(vec3 d) {
     float ra = atan(d.y, d.x);
     float dec = asin(clamp(d.z, -1.0, 1.0));
     float mw = texture(uMilky, vec2(ra / TAU, dec / PI + 0.5)).r;
-    col += (vec3(0.50, 0.57, 0.82) * mw * 0.26 + vec3(0.95, 0.80, 0.62) * mw * mw * 0.12) * uMW;
+    col += (vec3(0.60, 0.58, 0.54) * mw * 0.26 + vec3(0.95, 0.80, 0.62) * mw * mw * 0.12) * uMW;
   }
   if (uFoot > 0.0) {
     vec4 c = max(texture(uCube, d) * uCountScale, 0.0);
@@ -193,11 +193,11 @@ void main() {
   shape *= uAlphaMul * vKeep;
   if (shape <= 0.0) discard;
 
-  // Base: deep blue sphere with a soft limb (globe) or edge glow (map).
-  vec3 col = vec3(0.026, 0.038, 0.088);
+  // Base: a dark photographic plate with a warm limb (globe) or edge glow (map).
+  vec3 col = vec3(0.036, 0.035, 0.034);
   float rim = smoothstep(0.6, 1.0, rg);
-  col += vec3(0.04, 0.09, 0.19) * rim * rim * rim * (1.0 - uMorph);
-  col += vec3(0.025, 0.06, 0.13) * pow(smoothstep(0.8, 1.0, eh), 2.0) * uMorph;
+  col += vec3(0.10, 0.075, 0.045) * rim * rim * rim * (1.0 - uMorph);
+  col += vec3(0.06, 0.045, 0.028) * pow(smoothstep(0.8, 1.0, eh), 2.0) * uMorph;
   col += skyLayers(d);
   o = vec4(col * shape, shape);
 }
@@ -393,7 +393,7 @@ void main() {
 }
 `;
 
-// Full-screen background: deep space gradient, vignette, halo around the sky.
+// Full-screen background: ink gradient, vignette, a warm halo around the sky.
 const BG_VS = /* glsl */ `${HEAD}
 void main() {
   vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
@@ -416,8 +416,7 @@ void main() {
   vec2 uv = px / uViewport;
   vec2 p = px - uCenter;
   p.y = -p.y;
-  vec3 col = mix(vec3(0.013, 0.017, 0.040), vec3(0.006, 0.008, 0.020), uv.y);
-  col += vec3(0.016, 0.010, 0.034) * smoothstep(0.9, 0.0, length(uv - vec2(0.85, 0.1)));
+  vec3 col = mix(vec3(0.034, 0.035, 0.040), vec3(0.020, 0.021, 0.024), uv.y);
   float v = length((uv - 0.5) * vec2(uViewport.x / uViewport.y, 1.0));
   col *= 1.0 - 0.6 * smoothstep(0.35, 1.15, v);
   float r = length(p) / uR;
@@ -425,7 +424,7 @@ void main() {
   vec2 q = (p - uMapPan) / uMapS;
   float e = sqrt(q.x * q.x * 0.125 + q.y * q.y * 0.5);
   float hm = exp(-max(e - 1.0, 0.0) * 12.0) * 0.6;
-  col += vec3(0.07, 0.14, 0.28) * mix(hg, hm, uMorph) * 0.55;
+  col += vec3(0.16, 0.115, 0.06) * mix(hg, hm, uMorph) * 0.55;
   col += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
   o = vec4(col, 1.0);
 }

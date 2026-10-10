@@ -43,6 +43,8 @@ import { createTimeMachine, fmtDate } from './time-machine.js';
 
 const DESKTOP_MIN = 760;
 const LEFT_PANEL = 380;
+const RAIL_FOLDED = 44; // the stories rail folded to a tab
+const FRAME_GAP = 12; // between the docked panels and the viewport frame
 const SCAN_WINDOW = 2; // days of "scan head" glow
 const CUBE_CAP = 36000; // footprint instances accumulated per frame
 const BUILD_STEP = 5000; // pointings converted to geometry per frame
@@ -53,9 +55,9 @@ const TRACKABLE = ['Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto']; /
 const LAYERS = [
   { id: 'footprints', label: 'SPHEREx footprints', short: 'Footprints', on: true, swatch: 'linear-gradient(135deg, var(--survey-1), var(--survey-2), var(--survey-3))' },
   { id: 'stars', label: 'Hipparcos stars', short: 'Stars', on: true, swatch: '#fff3d6' },
-  { id: 'constellations', label: 'Constellations', short: 'Constellations', on: false, swatch: '#96afff' },
-  { id: 'milkyway', label: 'Milky Way', short: 'Milky Way', on: false, swatch: '#b9c3e6' },
-  { id: 'grid', label: 'RA/Dec grid', short: 'Grid', on: false, swatch: '#7891dc' },
+  { id: 'constellations', label: 'Constellations', short: 'Constellations', on: false, swatch: '#e6dcc6' },
+  { id: 'milkyway', label: 'Milky Way', short: 'Milky Way', on: false, swatch: '#c9c2b2' },
+  { id: 'grid', label: 'RA/Dec grid', short: 'Grid', on: false, swatch: '#a39d8e' },
   { id: 'ecliptic', label: 'Ecliptic', short: 'Ecliptic', on: false, swatch: '#ffbe6e' },
   { id: 'galactic', label: 'Galactic plane', short: 'Galactic', on: false, swatch: '#c896ff' },
 ];
@@ -108,6 +110,18 @@ export function mountSkyView(root, { pointings: P, onPick = () => {}, onMode = (
   overlay.setAttribute('aria-hidden', 'true');
   view.appendChild(overlay);
   const octx = overlay.getContext('2d');
+
+  // The viewport frame between the docked panels: registration corners, tick
+  // scales, and a live readout of where the view points.
+  const frameEl = document.createElement('div');
+  frameEl.className = 'sky-frame reg-frame';
+  frameEl.setAttribute('aria-hidden', 'true');
+  frameEl.innerHTML = '<span class="sky-frame-scan"></span><div class="sky-frame-data"><span class="sky-fd-a"></span><span class="sky-fd-b"></span></div>';
+  view.appendChild(frameEl);
+  const frameData = { a: frameEl.querySelector('.sky-fd-a'), b: frameEl.querySelector('.sky-fd-b'), last: '' };
+  // Panels unroll once when the map first appears.
+  root.classList.add('sky-boot');
+  setTimeout(() => root.classList.remove('sky-boot'), 2600);
 
   // ------------------------------------------------------------ state ----
   const cam = new Camera();
@@ -624,16 +638,29 @@ export function mountSkyView(root, { pointings: P, onPick = () => {}, onMode = (
     const desktop = W >= DESKTOP_MIN;
     view.classList.toggle('narrow', !desktop);
     const timeH = (state.mode === 'ground' ? gbar : tm.el).offsetHeight || 120;
-    const x0 = desktop ? Math.min(LEFT_PANEL, W * 0.4) : 0;
+    // Desktop docks the view controls along the top; phones keep them floating.
+    const topH = desktop
+      ? hud.querySelector('.sky-controls').offsetHeight || 52
+      : Math.round(hud.querySelector('.sky-controls-top').getBoundingClientRect().bottom - view.getBoundingClientRect().top) + 7 || 56;
+    const x0 = freeLeft();
+    // The sky is centered in the frame between the docked panels, clear of
+    // the zoom keys on either side.
     const focus = desktop
-      ? { x0, x1: W - 64, y0: 8, y1: H - timeH - 28 }
-      : { x0: 0, x1: W, y0: 56, y1: H - timeH - 16 };
+      ? { x0: x0 + FRAME_GAP + 56, x1: W - FRAME_GAP - 56, y0: topH + FRAME_GAP, y1: H - timeH - FRAME_GAP }
+      : { x0: 0, x1: W, y0: topH + 4, y1: H - timeH - 8 };
     cam.setViewport(W, H, focus);
     renderer.resize(W, H, dpr);
     overlay.width = Math.round(W * dpr);
     overlay.height = Math.round(H * dpr);
     view.style.setProperty('--sky-free-left', `${x0}px`);
+    view.style.setProperty('--sky-top', `${topH}px`);
+    view.style.setProperty('--sky-bottom', `${timeH}px`);
     needsRender = true;
+  }
+  // Width of the stories rail on the left (folded to a tab when hidden).
+  function freeLeft() {
+    if (W < DESKTOP_MIN) return 0;
+    return root.querySelector('.stories.collapsed') ? RAIL_FOLDED : Math.min(LEFT_PANEL, W * 0.4);
   }
   // HUD panels the canvas labels must not run under.
   let avoidRects = [];
@@ -658,6 +685,13 @@ export function mountSkyView(root, { pointings: P, onPick = () => {}, onMode = (
   });
   resizeObs.observe(view);
   resizeObs.observe(hud.querySelector('.sky-controls'));
+  resizeObs.observe(tm.el);
+  resizeObs.observe(gbar);
+  // The stories rail folds and unfolds without resizing the view.
+  root.addEventListener('stories-toggle', () => {
+    layout();
+    measureAvoid();
+  });
   resizeObs.observe(tm.el);
   resizeObs.observe(gbar);
   layout();
@@ -1363,12 +1397,12 @@ export function mountSkyView(root, { pointings: P, onPick = () => {}, onMode = (
     const lines = [];
     if (layers.grid) {
       const step = gridFor(fov);
-      lines.push({ name: `grid${step}`, color: [0.47, 0.57, 0.86, 0.22], width: 1 });
+      lines.push({ name: `grid${step}`, color: [0.92, 0.9, 0.85, 0.15], width: 1 });
       gridStep = step;
     }
     if (layers.galactic) lines.push({ name: 'galactic', color: [0.78, 0.6, 1.0, 0.6], width: 1.4 });
     if (layers.ecliptic) lines.push({ name: 'ecliptic', color: [1.0, 0.75, 0.45, 0.75], width: 1.4, dash: 3 });
-    if (layers.constellations) lines.push({ name: 'constellations', color: [0.6, 0.7, 1.0, 0.42], width: 1.1 });
+    if (layers.constellations) lines.push({ name: 'constellations', color: [0.95, 0.9, 0.8, 0.36], width: 1.1 });
     const builtEnd = Math.min(end, renderer.fpBuilt, renderer.cubeN || end);
     // From Earth, the "just observed" glow only means something on dates inside the survey.
     const groundPast = state.mode === 'ground' && gs.t / 86400000 + 40587 > tMax + SCAN_WINDOW;
@@ -1412,7 +1446,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {}, onMode = (
       dpr,
       W,
       H,
-      x0: W >= DESKTOP_MIN ? Math.min(LEFT_PANEL, W * 0.4) : 0,
+      x0: freeLeft(),
       avoid: avoidRects,
       grid: layers.grid,
       gridStep: { ra: gridStep, dec: gridStep },
@@ -1423,7 +1457,21 @@ export function mountSkyView(root, { pointings: P, onPick = () => {}, onMode = (
       footprints: layers.footprints,
       reticle: reticleActive && reticleV ? { v: reticleV, phase: ((now || 0) / 1400) % 1 } : null,
       ground: state.mode === 'ground' ? { bodies: gs.bodies, day: gs.day, compass: G.compassPoint } : null,
+      bezel: state.mode !== 'ground',
     });
+    updateFrameData();
+  }
+  function updateFrameData() {
+    const fov = Math.round(cam.fov());
+    let a = '';
+    if (state.mode === 'ground') a = `<i>Facing</i> az ${Math.round(cam.az)}° alt ${Math.round(cam.alt)}°`;
+    else if (cam.morph < 0.5) a = `<i>Center</i> ${formatRa(cam.ra).slice(0, 7)} ${formatDec(cam.dec).slice(0, 8)}`;
+    const b = cam.morph < 0.5 || state.mode === 'ground' ? `<i>Field</i> ${fov}°` : '<i>Whole sky</i> Hammer-Aitoff';
+    const key = a + b;
+    if (key === frameData.last) return;
+    frameData.last = key;
+    frameData.a.innerHTML = a;
+    frameData.b.innerHTML = b;
   }
 
   function start() {
