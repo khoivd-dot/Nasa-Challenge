@@ -20,7 +20,7 @@ export function createTimeMachine(parent, { tMin, tMax, times, colors, onSeek, o
   el.setAttribute('aria-label', 'Time machine');
   el.innerHTML = `
     <div class="sky-time-row">
-      <button class="btn icon primary sky-play" type="button" aria-label="Play survey timeline">${ICON_PLAY}</button>
+      <button class="btn icon primary sky-play" type="button" aria-label="Replay how SPHEREx scanned the sky">${ICON_PLAY}</button>
       <div class="sky-stat sky-stat-date">
         <span class="label">Date <span class="sky-utc">UTC</span></span>
         <span class="mono sky-date">-</span>
@@ -37,6 +37,7 @@ export function createTimeMachine(parent, { tMin, tMax, times, colors, onSeek, o
         ${SPEEDS.map((s) => `<button type="button" data-v="${s.v}" aria-label="${s.aria}" aria-pressed="${s.v === speed}">${s.label}</button>`).join('')}
       </div>
     </div>
+    <div class="sky-time-cap">Replay how SPHEREx scanned the sky: press play or drag the timeline</div>
     <div class="sky-track" tabindex="0" role="slider" aria-label="Survey time"
          aria-valuemin="${tMin}" aria-valuemax="${tMax}" aria-valuenow="${tMax}">
       <canvas class="sky-hist" aria-hidden="true"></canvas>
@@ -160,7 +161,7 @@ export function createTimeMachine(parent, { tMin, tMax, times, colors, onSeek, o
   }
   function setPlaying(p) {
     playBtn.innerHTML = p ? ICON_PAUSE : ICON_PLAY;
-    playBtn.setAttribute('aria-label', p ? 'Pause survey timeline' : 'Play survey timeline');
+    playBtn.setAttribute('aria-label', p ? 'Pause survey timeline' : 'Replay how SPHEREx scanned the sky');
     el.classList.toggle('playing', p);
   }
 

@@ -1,6 +1,7 @@
 // GLSL for the sky map. Every layer shares one projection so the globe and the
 // full-sky Hammer-Aitoff map can morph into each other: positions are mixed
-// in screen space by uMorph (0 = globe, 1 = map).
+// in screen space by uMorph (0 = globe, 1 = map). uGround switches the globe
+// to a stereographic view from the ground (the "From Earth" mode).
 
 const HEAD = /* glsl */ `#version 300 es
 precision highp float;
@@ -21,6 +22,7 @@ uniform float uMapS;     // CSS px per Hammer unit
 uniform vec2 uMapPan;    // CSS px, y up
 uniform vec2 uCenter;    // projection center, CSS px from the top-left corner
 uniform vec2 uViewport;  // canvas size, CSS px
+uniform float uGround;   // 1: stereographic view from a place on Earth
 
 float lonRel(vec3 d) {
   return atan(d.y * uLon0.x - d.x * uLon0.y, d.x * uLon0.x + d.y * uLon0.y);
@@ -34,6 +36,7 @@ vec2 hammer(float lam, float z) {
 // Orthographic view of the sphere from inside; the far side is folded onto the limb.
 vec2 globeUnit(vec3 d) {
   vec2 p = vec2(dot(d, uRight), dot(d, uUp));
+  if (uGround > 0.5) return p / max(1.0 + dot(d, uFwd), 0.05);
   if (dot(d, uFwd) < 0.0) {
     float l = length(p);
     p = l > 1e-6 ? p / l : vec2(1.0, 0.0);
@@ -46,6 +49,7 @@ vec2 projPx(vec3 d, float lam) {
   return mix(g, uMapPan + uMapS * hammer(lam, d.z), uMorph);
 }
 float visOf(vec3 d) {
+  if (uGround > 0.5) return smoothstep(-0.62, -0.5, dot(d, uFwd));
   return mix(smoothstep(-0.005, 0.035, dot(d, uFwd)), 1.0, uMorph);
 }
 vec4 toClip(vec2 p) {
@@ -96,6 +100,10 @@ void main() {
   }
   float lam = lonRel(c);
   vKeep = 1.0;
+  if (uGround > 0.5 && min(min(visOf(aC0), visOf(aC1)), min(visOf(aC2), visOf(aC3))) < 0.01) {
+    gl_Position = HIDDEN;
+    return;
+  }
   if (uMorph > 0.0) {
     vec4 L = vec4(lonRel(aC0), lonRel(aC1), lonRel(aC2), lonRel(aC3));
     float lmin = min(min(L.x, L.y), min(L.z, L.w));
@@ -126,19 +134,49 @@ void main() {
 }
 `;
 
-// Sky body: base color, Milky Way and the accumulated footprint cube map.
-const SKY_FS = /* glsl */ `${HEAD}
+// Milky Way and the accumulated footprint cube map along a sky direction.
+const SKY_LAYERS = /* glsl */ `
 uniform samplerCube uCube;
 uniform sampler2D uMilky;
-uniform float uMorph;
-uniform vec3 uFwd;
 uniform float uFoot;
 uniform float uMW;
 uniform float uCountScale;
 uniform float uSatLog;
-uniform float uAlphaMul;
 uniform float uEdge;
 uniform vec3 uPassCol[4];
+vec3 skyLayers(vec3 d) {
+  vec3 col = vec3(0.0);
+  if (uMW > 0.0) {
+    float ra = atan(d.y, d.x);
+    float dec = asin(clamp(d.z, -1.0, 1.0));
+    float mw = texture(uMilky, vec2(ra / TAU, dec / PI + 0.5)).r;
+    col += (vec3(0.50, 0.57, 0.82) * mw * 0.26 + vec3(0.95, 0.80, 0.62) * mw * mw * 0.12) * uMW;
+  }
+  if (uFoot > 0.0) {
+    vec4 c = max(texture(uCube, d) * uCountScale, 0.0);
+    float total = c.r + c.g + c.b + c.a;
+    // Footprint edges: the visit count steps across a footprint boundary.
+    float edge = min(fwidth(total), 3.0) * uEdge;
+    if (total > 0.002) {
+      // Hue leans to the most recent pass; brightness follows log(visits).
+      vec4 w = c * vec4(1.0, 2.0, 4.0, 8.0);
+      vec3 hue = (w.r * uPassCol[0] + w.g * uPassCol[1] + w.b * uPassCol[2] + w.a * uPassCol[3]) / (w.r + w.g + w.b + w.a);
+      float I = clamp(log2(1.0 + total) / uSatLog, 0.0, 1.0);
+      float cover = clamp(total, 0.0, 1.0);
+      float lum = 0.115 + 0.28 * pow(I, 1.8) + 0.04 * edge;
+      vec3 f = hue * lum + vec3(1.0, 0.95, 0.88) * pow(smoothstep(0.6, 1.0, I), 2.0) * 0.9;
+      col += f * cover * uFoot;
+    }
+  }
+  return col;
+}
+`;
+
+// Sky body: base color, Milky Way and the accumulated footprint cube map.
+const SKY_FS = /* glsl */ `${HEAD}${SKY_LAYERS}
+uniform float uMorph;
+uniform vec3 uFwd;
+uniform float uAlphaMul;
 in vec3 vDir;
 in vec2 vGlobe;
 in vec2 vHam;
@@ -160,30 +198,7 @@ void main() {
   float rim = smoothstep(0.6, 1.0, rg);
   col += vec3(0.04, 0.09, 0.19) * rim * rim * rim * (1.0 - uMorph);
   col += vec3(0.025, 0.06, 0.13) * pow(smoothstep(0.8, 1.0, eh), 2.0) * uMorph;
-
-  if (uMW > 0.0) {
-    float ra = atan(d.y, d.x);
-    float dec = asin(clamp(d.z, -1.0, 1.0));
-    float mw = texture(uMilky, vec2(ra / TAU, dec / PI + 0.5)).r;
-    col += (vec3(0.50, 0.57, 0.82) * mw * 0.26 + vec3(0.95, 0.80, 0.62) * mw * mw * 0.12) * uMW;
-  }
-
-  if (uFoot > 0.0) {
-    vec4 c = max(texture(uCube, d) * uCountScale, 0.0);
-    float total = c.r + c.g + c.b + c.a;
-    // Footprint edges: the visit count steps across a footprint boundary.
-    float edge = min(fwidth(total), 3.0) * uEdge;
-    if (total > 0.002) {
-      // Hue leans to the most recent pass; brightness follows log(visits).
-      vec4 w = c * vec4(1.0, 2.0, 4.0, 8.0);
-      vec3 hue = (w.r * uPassCol[0] + w.g * uPassCol[1] + w.b * uPassCol[2] + w.a * uPassCol[3]) / (w.r + w.g + w.b + w.a);
-      float I = clamp(log2(1.0 + total) / uSatLog, 0.0, 1.0);
-      float cover = clamp(total, 0.0, 1.0);
-      float lum = 0.115 + 0.28 * pow(I, 1.8) + 0.04 * edge;
-      vec3 f = hue * lum + vec3(1.0, 0.95, 0.88) * pow(smoothstep(0.6, 1.0, I), 2.0) * 0.9;
-      col += f * cover * uFoot;
-    }
-  }
+  col += skyLayers(d);
   o = vec4(col * shape, shape);
 }
 `;
@@ -416,6 +431,103 @@ void main() {
 }
 `;
 
+// Ground view, per pixel: the sky direction under each screen point
+// (inverse stereographic), so the sky is exact out to the corners.
+const VIEW_DIR = /* glsl */ `
+uniform vec3 uRight;
+uniform vec3 uUp;
+uniform vec3 uFwd;
+uniform float uR;
+uniform vec2 uCenter;
+uniform vec2 uViewport;
+uniform float uDpr;
+vec2 screenPx() {
+  return vec2(gl_FragCoord.x, uViewport.y * uDpr - gl_FragCoord.y) / uDpr;
+}
+vec3 viewDir(vec2 px) {
+  vec2 p = (px - uCenter) / uR;
+  p.y = -p.y;
+  float r2 = dot(p, p);
+  float s = 2.0 / (1.0 + r2);
+  return normalize(uRight * p.x * s + uUp * p.y * s + uFwd * (1.0 - r2) / (1.0 + r2));
+}
+`;
+
+// Night sky seen from the ground: dark sky, Milky Way and SPHEREx coverage.
+const GSKY_FS = /* glsl */ `${HEAD}${VIEW_DIR}${SKY_LAYERS}
+uniform vec3 uZenith;
+out vec4 o;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+void main() {
+  vec3 d = viewDir(screenPx());
+  float a = dot(d, uZenith);
+  // Darkest at the zenith, a little airglow toward the horizon.
+  vec3 col = mix(vec3(0.020, 0.030, 0.062), vec3(0.008, 0.012, 0.030), smoothstep(0.0, 0.9, a));
+  col += skyLayers(d);
+  col += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
+  o = vec4(col, 1.0);
+}
+`;
+
+// Drawn last in the ground view: daylight and twilight, haze near the horizon,
+// the Sun, and the ground itself (a gentle hill line) covering what has set.
+const GROUND_FS = /* glsl */ `${HEAD}${VIEW_DIR}
+uniform vec3 uZenith;
+uniform vec3 uNorth;
+uniform vec3 uEast;
+uniform vec3 uSun;
+uniform float uSunAlt;   // sine of the Sun's altitude
+out vec4 o;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+float hills(float az) {
+  return 0.0045 + 0.0035 * sin(3.0 * az + 0.7) + 0.0022 * sin(7.0 * az + 2.1) + 0.0012 * sin(17.0 * az + 0.3) + 0.0006 * sin(41.0 * az);
+}
+void main() {
+  vec3 d = viewDir(screenPx());
+  float a = dot(d, uZenith);
+  float az = atan(dot(d, uEast), dot(d, uNorth));
+  float sunA = uSunAlt;
+  float day = smoothstep(-0.10, 0.10, sunA);           // ~ -6 deg .. +6 deg
+  float twi = smoothstep(-0.31, -0.06, sunA) * (1.0 - smoothstep(0.02, 0.18, sunA));
+  vec3 sh = normalize(uSun - uZenith * dot(uSun, uZenith) + 1e-6 * uNorth);
+  vec3 dh = normalize(d - uZenith * a + 1e-6 * uNorth);
+  float toSun = max(dot(sh, dh), 0.0);
+  float cosSun = dot(d, uSun);
+  float above = max(a, 0.0);
+
+  // Sky light: a premultiplied layer over the stars and the coverage map.
+  vec3 dayCol = mix(vec3(0.40, 0.56, 0.80), vec3(0.11, 0.24, 0.52), pow(above, 0.6));
+  float dayA = day * 0.82;
+  vec3 col = dayCol * dayA;
+  float alpha = dayA;
+  // Twilight: warm near the Sun's side of the horizon, blue above it.
+  float tw = twi * exp(-above * 5.0) * (0.25 + 0.75 * pow(toSun, 3.0));
+  col += vec3(0.85, 0.42, 0.18) * tw * 0.55 + vec3(0.10, 0.16, 0.34) * twi * exp(-above * 2.0) * 0.35;
+  alpha = max(alpha, tw * 0.35);
+  // Haze and airglow: stars fade into it near the horizon.
+  float haze = exp(-above * 18.0);
+  col += mix(vec3(0.030, 0.045, 0.080), vec3(0.45, 0.58, 0.78), day) * haze * 0.45;
+  alpha = max(alpha, haze * 0.5);
+  // The Sun and its glow.
+  float sunUp = smoothstep(-0.02, 0.01, sunA);
+  col += vec3(1.0, 0.92, 0.78) * (pow(max(cosSun, 0.0), 3000.0) * 3.0 + pow(max(cosSun, 0.0), 60.0) * 0.35 * day) * sunUp;
+
+  // Ground with an anti-aliased hill line.
+  float h = hills(az);
+  float g = clamp((h - a) / max(fwidth(a), 1e-5) + 0.5, 0.0, 1.0);
+  float depth = clamp(-a, 0.0, 1.0);
+  vec3 groundCol = mix(vec3(0.020, 0.026, 0.034), vec3(0.010, 0.012, 0.016), sqrt(depth));
+  groundCol = mix(groundCol, vec3(0.09, 0.11, 0.09), day * (1.0 - 0.6 * sqrt(depth)));
+  groundCol += vec3(0.85, 0.42, 0.18) * twi * 0.05 * pow(toSun, 3.0) * exp(-depth * 30.0);
+  groundCol += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
+  // A faint rim of light along the skyline.
+  float rim = exp(-abs(a - h) / max(fwidth(a), 1e-5) * 0.7) * 0.06;
+  col = mix(col, groundCol, g) + vec3(0.35, 0.45, 0.65) * rim * (1.0 - g);
+  alpha = mix(alpha, 1.0, g);
+  o = vec4(col, alpha);
+}
+`;
+
 export const SHADERS = {
   quadVs: QUAD_VS,
   skyFs: SKY_FS,
@@ -430,4 +542,6 @@ export const SHADERS = {
   starFs: STAR_FS,
   bgVs: BG_VS,
   bgFs: BG_FS,
+  gskyFs: GSKY_FS,
+  groundFs: GROUND_FS,
 };

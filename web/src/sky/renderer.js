@@ -81,6 +81,8 @@ export class SkyRenderer {
       line: createProgram(gl, SHADERS.lineVs, SHADERS.lineFs, ['aA', 'aB', 'aS']),
       star: createProgram(gl, SHADERS.starVs, SHADERS.starFs, ['aDir', 'aMag', 'aCol']),
       bg: createProgram(gl, SHADERS.bgVs, SHADERS.bgFs),
+      gsky: createProgram(gl, SHADERS.bgVs, SHADERS.gskyFs),
+      ground: createProgram(gl, SHADERS.bgVs, SHADERS.groundFs),
     };
     this.emptyVao = gl.createVertexArray();
     this.initCube();
@@ -309,7 +311,8 @@ export class SkyRenderer {
 
   /**
    * Draw a frame. s: {cam, time, scanWindow, scanStart, scanEnd, layers,
-   * passCols (12 floats), s0, period, outlineAlpha, gridLevel}
+   * passCols (12 floats), s0, period, outlineAlpha, gridLevel, sun}. In the
+   * ground view (cam.ground) the sky is drawn per pixel and the ground last.
    */
   render(s) {
     const gl = this.gl;
@@ -332,40 +335,56 @@ export class SkyRenderer {
       uS0: s.s0,
       uPeriod: s.period,
       uPassCol: s.passCols,
+      uGround: cam.ground ? 1 : 0,
     };
     const L = s.layers;
-    const seam = cam.morph > 0 ? [1, -1] : [1];
-    const seamAlpha = (w) => (w > 0 ? 1 : smooth(0.55, 1, cam.morph));
-
-    // Background.
-    gl.disable(gl.BLEND);
-    gl.useProgram(this.p.bg.prog);
-    setUniforms(gl, this.p.bg, proj);
-    gl.bindVertexArray(this.emptyVao);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-
-    // Sky body with Milky Way and accumulated footprints.
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    if (this.meshVao) {
-      const p = this.p.sky;
-      gl.useProgram(p.prog);
+    const ground = cam.ground && cam.hor;
+    const layerUniforms = {
+      uCube: { i: 0 },
+      uMilky: { i: 1 },
+      uFoot: L.footprints ? (s.footGain ?? 1) : 0,
+      uMW: L.milkyway && this.mwReady ? 1 : 0,
+      uCountScale: this.countScale,
+      uSatLog: Math.log2(1 + s.saturation),
+      uEdge: s.edge ?? 1,
+    };
+    const bindSkyTextures = () => {
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_CUBE_MAP, this.cube.tex);
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, this.mwTex);
-      setUniforms(gl, p, {
-        ...proj,
-        uCube: { i: 0 },
-        uMilky: { i: 1 },
-        uFoot: L.footprints ? 1 : 0,
-        uMW: L.milkyway && this.mwReady ? 1 : 0,
-        uCountScale: this.countScale,
-        uSatLog: Math.log2(1 + s.saturation),
-        uEdge: s.edge ?? 1,
-        uTime: 0,
-        uWindow: 0,
-      });
+    };
+    const seam = cam.morph > 0 ? [1, -1] : [1];
+    const seamAlpha = (w) => (w > 0 ? 1 : smooth(0.55, 1, cam.morph));
+
+    if (ground) {
+      // Whole-screen sky, exact per pixel, with Milky Way and footprints.
+      gl.disable(gl.BLEND);
+      const p = this.p.gsky;
+      gl.useProgram(p.prog);
+      bindSkyTextures();
+      setUniforms(gl, p, { ...proj, ...layerUniforms, uZenith: cam.hor.zenith });
+      gl.bindVertexArray(this.emptyVao);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    } else {
+      // Background.
+      gl.disable(gl.BLEND);
+      gl.useProgram(this.p.bg.prog);
+      setUniforms(gl, this.p.bg, proj);
+      gl.bindVertexArray(this.emptyVao);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    }
+
+    // Sky body with Milky Way and accumulated footprints.
+    if (this.meshVao && !ground) {
+      const p = this.p.sky;
+      gl.useProgram(p.prog);
+      bindSkyTextures();
+      setUniforms(gl, p, { ...proj, ...layerUniforms, uTime: 0, uWindow: 0 });
       gl.bindVertexArray(this.meshVao);
       for (const w of seam) {
         setUniforms(gl, p, { uWrap: w, uAlphaMul: seamAlpha(w) });
@@ -412,6 +431,24 @@ export class SkyRenderer {
       setUniforms(gl, p, { ...proj, uScale: s.starScale, uBright: s.starBright });
       gl.bindVertexArray(this.starVao);
       gl.drawArrays(gl.POINTS, 0, this.starCount);
+    }
+    if (ground) {
+      // Daylight, twilight, haze and the ground over everything below the horizon.
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      const p = this.p.ground;
+      gl.useProgram(p.prog);
+      const sun = s.sun || [0, 0, -1];
+      const z = cam.hor.zenith;
+      setUniforms(gl, p, {
+        ...proj,
+        uZenith: z,
+        uNorth: cam.hor.north,
+        uEast: cam.hor.east,
+        uSun: sun,
+        uSunAlt: sun[0] * z[0] + sun[1] * z[1] + sun[2] * z[2],
+      });
+      gl.bindVertexArray(this.emptyVao);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
     gl.bindVertexArray(null);
   }

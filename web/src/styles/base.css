@@ -259,3 +259,26 @@ input[type='range']::-moz-range-thumb {
   color: var(--text);
   font-size: 14px;
 }
+
+/* Touch screens: every control at least about 40-44 px tall. */
+@media (pointer: coarse) {
+  .btn {
+    min-height: 44px;
+  }
+  .btn.icon {
+    min-width: 44px;
+  }
+  .seg button,
+  .sky-chip,
+  .sky-gstep {
+    min-height: 40px;
+  }
+  .sky-gstep {
+    min-width: 40px;
+  }
+  .nav a {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+  }
+}

@@ -1,5 +1,6 @@
 // 2D canvas overlay: constellation names, grid labels, ecliptic / galactic
-// plane captions, deep-field markers and the live "SPHEREx" scan reticle.
+// plane captions, deep-field markers and the live "SPHEREx" scan reticle. In
+// the ground view also the compass points, the Sun, the Moon and the planets.
 
 import { radecToVec, eclipticToEquatorial, galacticToEquatorial } from '../data/sky-math.js';
 
@@ -119,6 +120,125 @@ export function drawOverlay(ctx, cam, o) {
       if (free(p.x + 16, p.y - 7, p.x + 72, p.y + 7)) shadowText(ctx, 'SPHEREx', p.x + 18, p.y);
     }
   }
+
+  if (o.ground) drawGround(ctx, cam, o, o.ground, free);
+}
+
+// Compass points along the horizon, then the Sun, Moon and planets above it.
+function drawGround(ctx, cam, o, g, free) {
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for (let k = 0; k < 8; k++) {
+    const p = cam.project(cam.fromAltAz(k * 45, 0), false);
+    if (p.vis < 0.3 || p.x < o.x0 + 8 || p.x > o.W - 8 || p.y < 8 || p.y > o.H - 8) continue;
+    const main = k % 2 === 0;
+    const text = g.compass(k * 45);
+    ctx.font = main ? `600 15px ${FONT}` : `500 11px ${FONT}`;
+    const w = ctx.measureText(text).width / 2 + 2;
+    const y = p.y + 9;
+    if (!free(p.x - w, y - 2, p.x + w, y + 18)) continue;
+    ctx.strokeStyle = 'rgba(220, 228, 255, 0.45)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y + 1);
+    ctx.lineTo(p.x, p.y + 6);
+    ctx.stroke();
+    ctx.fillStyle = k === 0 ? 'rgba(255, 150, 130, 0.95)' : `rgba(222, 230, 255, ${main ? 0.9 : 0.6})`;
+    ctx.fillText(text, p.x, y);
+  }
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  const sun = g.bodies[0];
+  // Markers faint to bright so bright bodies stay on top; labels bright first so they win space.
+  const order = g.bodies.slice(1).sort((a, b) => (b.mag ?? 0) - (a.mag ?? 0));
+  const labels = [];
+  for (const b of [...order, sun]) {
+    const p = cam.project(b.v);
+    if (p.vis < 0.2 || p.x < o.x0 || p.x > o.W || p.y < 0 || p.y > o.H) continue;
+    const a = p.vis;
+    let r;
+    if (b.kind === 'sun') {
+      r = 9;
+      const glow = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * 3);
+      glow.addColorStop(0, `rgba(255, 246, 220, ${a})`);
+      glow.addColorStop(0.33, `rgba(255, 230, 170, ${0.9 * a})`);
+      glow.addColorStop(1, 'rgba(255, 200, 120, 0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r * 3, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (b.kind === 'moon') {
+      // Half a degree across, but never smaller than a readable disc.
+      r = Math.max(7, (cam.R * 0.26 * Math.PI) / 360);
+      drawMoon(ctx, cam, p, r, b, sun, a);
+    } else if (b.kind === 'dwarf') {
+      r = 4;
+      ctx.strokeStyle = `rgba(216, 195, 165, ${0.85 * a})`;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      r = Math.max(1.8, Math.min(4.6, 3.2 - 0.45 * (b.mag ?? 2)));
+      ctx.fillStyle = b.color;
+      ctx.globalAlpha = a;
+      ctx.shadowColor = b.color;
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+    labels.push({ b, p, r, a });
+  }
+  const placed = [];
+  const clear = (x0, y0, x1, y1) => free(x0, y0, x1, y1) && placed.every((q) => x1 < q[0] || x0 > q[2] || y1 < q[1] || y0 > q[3]);
+  for (const { b, p, r, a } of labels.reverse()) {
+    const label = b.kind === 'moon' && b.lit !== null ? `Moon · ${Math.round(b.lit * 100)}% lit` : b.name;
+    ctx.font = `${b.kind === 'dwarf' ? 500 : 600} 12px ${FONT}`;
+    const tw = ctx.measureText(label).width;
+    // Right of the marker, else left, else just below it.
+    const spots = [
+      [p.x + r + 6, p.y],
+      [p.x - r - 6 - tw, p.y],
+      [p.x - tw / 2, p.y + r + 12],
+    ];
+    const spot = spots.find(([x, y]) => clear(x - 2, y - 8, x + tw + 2, y + 8));
+    if (!spot) continue;
+    placed.push([spot[0] - 2, spot[1] - 8, spot[0] + tw + 2, spot[1] + 8]);
+    ctx.fillStyle = b.kind === 'dwarf' ? `rgba(216, 195, 165, ${0.85 * a})` : `rgba(240, 243, 255, ${0.95 * a})`;
+    shadowText(ctx, label, spot[0], spot[1]);
+  }
+}
+
+// The Moon's lit side faces the Sun: half disc plus a terminator ellipse.
+function drawMoon(ctx, cam, p, r, moon, sun, a) {
+  const m = moon.v;
+  const s = sun.v;
+  const d = s[0] * m[0] + s[1] * m[1] + s[2] * m[2];
+  const t = [s[0] - d * m[0], s[1] - d * m[1], s[2] - d * m[2]];
+  const n = Math.hypot(...t) || 1;
+  const q = cam.project([m[0] + (0.01 * t[0]) / n, m[1] + (0.01 * t[1]) / n, m[2] + (0.01 * t[2]) / n], false);
+  const ang = Math.atan2(q.y - p.y, q.x - p.x);
+  const k = moon.lit ?? 0.5;
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(ang);
+  ctx.globalAlpha = a;
+  ctx.fillStyle = 'rgba(46, 52, 70, 0.95)';
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#eef0f6';
+  ctx.shadowColor = 'rgba(238, 240, 246, 0.6)';
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2, false);
+  ctx.ellipse(0, 0, r * Math.abs(1 - 2 * k), r, 0, Math.PI / 2, -Math.PI / 2, k < 0.5);
+  ctx.fill();
+  ctx.restore();
 }
 
 function shadowText(ctx, text, x, y) {

@@ -1,8 +1,12 @@
 // Skyblink sky map: SPHEREx's real survey coverage on an interactive WebGL2
 // globe / full-sky map, with a time machine that replays the survey.
 //
-//   const sky = mountSkyView(root, { pointings, onPick(ra, dec) {} });
-//   sky.pause(); sky.resume(); sky.setTime(mjd); sky.flyTo(ra, dec);
+//   const sky = mountSkyView(root, { pointings, onPick(ra, dec, extra) {}, onMode(mode) {} });
+//   sky.pause(); sky.resume(); sky.setTime(mjd); sky.flyTo(ra, dec); sky.setMode('ground');
+//
+// Three views: 'globe', 'map' (full sky) and 'ground', the sky as seen from a
+// place on Earth at a chosen time (horizon, Sun, Moon, planets and SPHEREx
+// coverage). The ground code and Astronomy Engine load on first use.
 
 import '../styles/sky.css';
 import {
@@ -10,12 +14,11 @@ import {
   RAD,
   radecToVec,
   vecToRadec,
-  equatorialToGalactic,
   formatRa,
   formatDec,
 } from '../data/sky-math.js';
 import { mjdToDate } from '../data/pointings.js';
-import { Camera, slerp, smoothstep } from './camera.js';
+import { Camera, slerp, smoothstep, GROUND_FOV } from './camera.js';
 import { SkyRenderer } from './renderer.js';
 import {
   allocFootprints,
@@ -44,6 +47,8 @@ const SCAN_WINDOW = 2; // days of "scan head" glow
 const CUBE_CAP = 36000; // footprint instances accumulated per frame
 const BUILD_STEP = 5000; // pointings converted to geometry per frame
 const SATURATION = 4000; // visits that map to full brightness
+const NIGHT_SPEED = 20 * 60; // ground view time-lapse: seconds of sky per second
+const TRACKABLE = ['Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto']; // bodies the Lab can follow
 
 const LAYERS = [
   { id: 'footprints', label: 'SPHEREx footprints', short: 'Footprints', on: true, swatch: 'linear-gradient(135deg, var(--survey-1), var(--survey-2), var(--survey-3))' },
@@ -60,9 +65,14 @@ const ICON = {
   minus: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
   home: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.7"/><ellipse cx="12" cy="12" rx="3.6" ry="8" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4 12h16" stroke="currentColor" stroke-width="1.4"/></svg>',
   layers: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 4 3 8.5l9 4.5 9-4.5L12 4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m3 12.5 9 4.5 9-4.5M3 16.5l9 4.5 9-4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+  play: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.2-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" fill="currentColor"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><rect x="6.5" y="5" width="4" height="14" rx="1.2" fill="currentColor"/><rect x="13.5" y="5" width="4" height="14" rx="1.2" fill="currentColor"/></svg>',
+  locate: '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><circle cx="12" cy="12" r="6.5" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="12" r="2.2" fill="currentColor"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
+  prev: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m14.5 6-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  next: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="m9.5 6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
 
-export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
+export function mountSkyView(root, { pointings: P, onPick = () => {}, onMode = () => {} } = {}) {
   const BASE = import.meta.env.BASE_URL;
   const view = document.createElement('div');
   view.className = 'sky-view';
@@ -90,7 +100,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
       <p>Your browser or device does not provide WebGL2, so the interactive SPHEREx coverage map cannot be drawn.
       Try a recent Chrome, Edge, Firefox or Safari, or enable hardware acceleration.</p>`;
     view.appendChild(msg);
-    return { pause() {}, resume() {}, setTime() {}, flyTo() {}, destroy: () => view.remove() };
+    return { pause() {}, resume() {}, setTime() {}, flyTo() {}, setMode() {}, destroy: () => view.remove() };
   }
 
   const overlay = document.createElement('canvas');
@@ -116,6 +126,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
   };
   let zoomTarget = 1;
   let mapZoomTarget = 1;
+  let gFovTarget = cam.gFov;
   let zoomAnchor = null; // {v, x, y}
   let vel = { ra: 0, dec: 0, panX: 0, panY: 0, lon: 0 };
   let morphAnim = null; // {from, to, t}
@@ -195,6 +206,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
         <div class="seg sky-proj" role="group" aria-label="Projection">
           <button type="button" data-mode="globe" aria-pressed="true" aria-label="Globe view">Globe</button>
           <button type="button" data-mode="map" aria-pressed="false" aria-label="Full-sky map (Hammer-Aitoff)">Full sky</button>
+          <button type="button" data-mode="ground" aria-pressed="false" aria-label="The night sky from where you stand on Earth">From Earth</button>
         </div>
         <button type="button" class="btn icon sky-layers-toggle" aria-label="Show map layers" aria-expanded="false">${ICON.layers}</button>
       </div>
@@ -206,14 +218,14 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
           ).join('')}
         </div>
         <div class="sky-legend" aria-hidden="true">
-          <span>1 visit</span><span class="sky-legend-bar"></span><span>1000+</span>
+          <span>Visits per spot: 1</span><span class="sky-legend-bar"></span><span>1000+</span>
         </div>
       </div>
     </div>
     <div class="sky-readout glass" aria-live="off">
       <div class="sky-ro-row"><span class="label">RA</span><span class="mono sky-ro-ra"></span></div>
       <div class="sky-ro-row"><span class="label">Dec</span><span class="mono sky-ro-dec"></span></div>
-      <div class="sky-ro-row"><span class="label">Gal</span><span class="mono sky-ro-gal"></span></div>
+      <div class="sky-ro-row sky-ro-hor-row"><span class="label">Alt · Az</span><span class="mono sky-ro-hor"></span></div>
       <div class="sky-ro-visits"><span class="sky-ro-n mono"></span><span class="sky-ro-when"></span></div>
     </div>`;
   view.appendChild(hud);
@@ -230,7 +242,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
   const ro = {
     ra: hud.querySelector('.sky-ro-ra'),
     dec: hud.querySelector('.sky-ro-dec'),
-    gal: hud.querySelector('.sky-ro-gal'),
+    hor: hud.querySelector('.sky-ro-hor'),
     n: hud.querySelector('.sky-ro-n'),
     when: hud.querySelector('.sky-ro-when'),
   };
@@ -279,6 +291,324 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
     else resetView();
   });
 
+
+  // -------------------------------------------------------- from Earth ----
+  // Bottom bar of the ground view: when (a noon-to-noon slider shaded by the
+  // Sun's altitude) and where (a city, or the device's location).
+  const gbar = document.createElement('section');
+  gbar.className = 'sky-time sky-gbar glass';
+  gbar.hidden = true;
+  gbar.setAttribute('aria-label', 'Time and place on Earth');
+  gbar.innerHTML = `
+    <div class="sky-time-row sky-gbar-row">
+      <button class="btn icon primary sky-gplay" type="button" aria-label="Play the night forward">${ICON.play}</button>
+      <div class="sky-stat sky-gwhen">
+        <span class="label">Local time</span>
+        <span class="sky-gwhen-line">
+          <button type="button" class="sky-gstep" data-g="prev" aria-label="Previous night">${ICON.prev}</button>
+          <span class="mono sky-gtime">--:--</span>
+          <span class="sky-gday"></span>
+          <button type="button" class="sky-gstep" data-g="next" aria-label="Next night">${ICON.next}</button>
+        </span>
+      </div>
+      <div class="sky-gwhere">
+        <select class="sky-gplace" aria-label="Where you stand"></select>
+        <button type="button" class="btn icon sky-glocate" aria-label="Use my location" title="Use my location">${ICON.locate}</button>
+      </div>
+      <div class="seg sky-gjump" role="group" aria-label="Jump to">
+        <button type="button" data-g="tonight" aria-pressed="false">Tonight</button>
+        <button type="button" data-g="now" aria-pressed="false">Now</button>
+      </div>
+    </div>
+    <div class="sky-track sky-gtrack" tabindex="0" role="slider" aria-label="Time of night">
+      <div class="sky-gshade" aria-hidden="true"></div>
+      <div class="sky-head" aria-hidden="true"><span class="sky-head-dot"></span></div>
+    </div>
+    <div class="sky-ticks sky-gticks" aria-hidden="true"></div>
+    <p class="sky-gnote" aria-live="polite"></p>`;
+  view.appendChild(gbar);
+  const gq = (sel) => gbar.querySelector(sel);
+  const gel = {
+    play: gq('.sky-gplay'),
+    time: gq('.sky-gtime'),
+    day: gq('.sky-gday'),
+    place: gq('.sky-gplace'),
+    locate: gq('.sky-glocate'),
+    track: gq('.sky-gtrack'),
+    shade: gq('.sky-gshade'),
+    head: gq('.sky-gtrack .sky-head'),
+    ticks: gq('.sky-gticks'),
+    note: gq('.sky-gnote'),
+  };
+  let G = null; // ./ground.js, loaded on first use
+  const gs = {
+    place: null,
+    t: Date.now(),
+    live: false,
+    playing: false,
+    t0: 0, // slider span: local noon to the next local noon
+    t1: 0,
+    frame: null,
+    bodies: [],
+    sun: null,
+    day: 0, // 0 night .. 1 daylight
+    lastLive: 0,
+    savedTime: null, // survey time to restore when leaving the ground view
+    shownMinute: '',
+  };
+  const SAVED_PLACE = 'skyblink.place';
+
+  function fillPlaces() {
+    gel.place.innerHTML =
+      '<option value="here" hidden>My location</option>' +
+      G.CITIES.map((c, i) => `<option value="${i}">${c.name}</option>`).join('');
+  }
+  function showPlace() {
+    const i = G.CITIES.indexOf(gs.place);
+    const here = gel.place.querySelector('option[value="here"]');
+    here.hidden = i >= 0;
+    gel.place.value = i >= 0 ? String(i) : 'here';
+  }
+  function savedPlace() {
+    try {
+      const name = localStorage.getItem(SAVED_PLACE);
+      return G.CITIES.find((c) => c.name === name) || null;
+    } catch {
+      return null;
+    }
+  }
+  function setPlace(place, { keepClock = true } = {}) {
+    const old = gs.place;
+    const southSwitch = old && Math.sign(old.lat || 1) !== Math.sign(place.lat || 1);
+    gs.place = place;
+    showPlace();
+    if (G.CITIES.includes(place)) {
+      try {
+        localStorage.setItem(SAVED_PLACE, place.name);
+      } catch {
+        /* storage blocked: the choice lasts for this visit only */
+      }
+    }
+    let t = gs.t;
+    if (gs.live) t = Date.now();
+    else if (keepClock && old) {
+      // Same wall-clock time on the same local date, now at the new place.
+      const p = G.localParts(gs.t, old.tz);
+      t = G.fromLocal(p.y, p.m, p.d, p.h, p.min, place.tz);
+    }
+    gs.t0 = 0; // re-shade the slider for the new place
+    setGroundTime(t, gs.live);
+    if (southSwitch) startGroundFly(place.lat >= 0 ? 180 : 0, 35, cam.gFov);
+  }
+
+  function setGroundTime(t, live = false) {
+    if (!Number.isFinite(t) || !gs.place) return;
+    gs.t = t;
+    gs.live = live;
+    gs.frame = G.horizonFrame(t, gs.place);
+    gs.bodies = G.skyBodies(t, gs.place);
+    gs.sun = gs.bodies[0].v;
+    const sunAlt = G.altAz(gs.sun, gs.frame).alt;
+    gs.day = smoothstep(-6, 6, sunAlt);
+    if (state.mode === 'ground') {
+      cam.hor = gs.frame;
+      cam.update();
+    }
+    const start = G.nightStart(t, gs.place.tz);
+    if (start !== gs.t0) {
+      gs.t0 = start;
+      const p = G.localParts(start, gs.place.tz);
+      gs.t1 = G.fromLocal(p.y, p.m, p.d + 1, 12, 0, gs.place.tz);
+      shadeNight();
+    }
+    // Footprints observed up to this date (the latest data if it is later).
+    setTimeInternal(t / 86400000 + 40587);
+    updateGroundBar(sunAlt);
+    needsRender = true;
+  }
+
+  // Sun altitude -> sky color of the slider: night, three twilights, day.
+  const SHADE = [
+    [-18, [8, 11, 24]],
+    [-12, [18, 26, 58]],
+    [-6, [30, 46, 96]],
+    [0, [52, 84, 146]],
+    [10, [84, 132, 192]],
+  ];
+  function shadeColor(alt) {
+    if (alt <= SHADE[0][0]) return SHADE[0][1];
+    for (let k = 1; k < SHADE.length; k++) {
+      if (alt <= SHADE[k][0]) {
+        const [a0, c0] = SHADE[k - 1];
+        const [a1, c1] = SHADE[k];
+        const f = (alt - a0) / (a1 - a0);
+        return c0.map((v, i) => Math.round(v + (c1[i] - v) * f));
+      }
+    }
+    return SHADE[SHADE.length - 1][1];
+  }
+  function shadeNight() {
+    const alts = G.sunAltitudes(gs.t0, gs.t1, gs.place, 49);
+    gel.shade.style.background = `linear-gradient(90deg, ${alts
+      .map((a, k) => `rgb(${shadeColor(a).join(' ')}) ${((k / (alts.length - 1)) * 100).toFixed(2)}%`)
+      .join(', ')})`;
+    const p = G.localParts(gs.t0, gs.place.tz);
+    const ticks = [];
+    for (let k = 1; k < 8; k++) {
+      const tk = G.fromLocal(p.y, p.m, p.d, 12 + 3 * k, 0, gs.place.tz);
+      const f = (tk - gs.t0) / (gs.t1 - gs.t0);
+      ticks.push(`<span class="${k === 4 ? 'year' : ''}" style="left:${(f * 100).toFixed(2)}%">${String((12 + 3 * k) % 24).padStart(2, '0')}:00</span>`);
+    }
+    gel.ticks.innerHTML = ticks.join('');
+  }
+
+  function updateGroundBar(sunAlt) {
+    const { day, time } = G.formatLocal(gs.t, gs.place.tz);
+    const key = `${day}|${time}|${gs.live}|${gs.place.name}`;
+    const f = clamp((gs.t - gs.t0) / (gs.t1 - gs.t0 || 1), 0, 1);
+    gel.head.style.left = `${f * 100}%`;
+    gel.track.setAttribute('aria-valuenow', String(Math.round(f * 1440)));
+    if (key === gs.shownMinute) return;
+    gs.shownMinute = key;
+    gel.time.textContent = time;
+    gel.day.textContent = day;
+    gel.track.setAttribute('aria-valuetext', `${day}, ${time} local time in ${gs.place.name}`);
+    gbar.querySelector('[data-g="now"]').setAttribute('aria-pressed', String(gs.live));
+    const tn = G.tonight(Date.now(), gs.place.tz);
+    gbar.querySelector('[data-g="tonight"]').setAttribute('aria-pressed', String(!gs.live && Math.abs(gs.t - tn) < 60000));
+    const where = gs.place.name === 'My location' ? 'where you are' : `in ${gs.place.name}`;
+    let note = '';
+    if (sunAlt > -0.8) note = `The Sun is up ${where}, so the stars are washed out. Tap Tonight or drag the time to a dark part of the bar.`;
+    else if (sunAlt > -12) note = `Twilight ${where}: only the brightest stars and planets show.`;
+    const mjd = gs.t / 86400000 + 40587;
+    if (mjd > tMax + 1) note += `${note ? ' ' : ''}SPHEREx coverage is shown up to ${fmtDate(tMax)}, the newest data.`;
+    else if (mjd < tMin) note += `${note ? ' ' : ''}SPHEREx had not started its survey yet on this date.`;
+    gel.note.textContent = note;
+    gel.note.hidden = !note;
+  }
+
+  function setGroundPlaying(p) {
+    gs.playing = p;
+    gel.play.innerHTML = p ? ICON.pause : ICON.play;
+    gel.play.setAttribute('aria-label', p ? 'Pause' : 'Play the night forward');
+  }
+
+  // Time slider: drag, click, or arrow keys (10 min), Page keys (1 h).
+  function trackTime(e) {
+    const r = gel.track.getBoundingClientRect();
+    const f = clamp((e.clientX - r.left) / (r.width || 1), 0, 1);
+    setGroundTime(gs.t0 + f * (gs.t1 - gs.t0), false);
+  }
+  gel.track.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    gel.track.setPointerCapture(e.pointerId);
+    setGroundPlaying(false);
+    gbar.classList.add('scrubbing');
+    trackTime(e);
+  });
+  gel.track.addEventListener('pointermove', (e) => {
+    if (gel.track.hasPointerCapture(e.pointerId)) trackTime(e);
+  });
+  const endScrub = () => gbar.classList.remove('scrubbing');
+  gel.track.addEventListener('pointerup', endScrub);
+  gel.track.addEventListener('pointercancel', endScrub);
+  gel.track.addEventListener('keydown', (e) => {
+    const step = { ArrowLeft: -10, ArrowRight: 10, ArrowDown: -10, ArrowUp: 10, PageDown: -60, PageUp: 60 }[e.key];
+    let t = null;
+    if (step) t = gs.t + step * 60000;
+    else if (e.key === 'Home') t = gs.t0;
+    else if (e.key === 'End') t = gs.t1;
+    if (t === null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setGroundPlaying(false);
+    setGroundTime(clamp(t, gs.t0, gs.t1), false);
+  });
+  gel.play.addEventListener('click', () => toggleGroundPlay());
+  function toggleGroundPlay() {
+    if (!gs.playing && gs.t >= gs.t1 - 60000) setGroundTime(gs.t0, false);
+    setGroundPlaying(!gs.playing);
+  }
+  gbar.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-g]');
+    if (!b) return;
+    setGroundPlaying(false);
+    const now = Date.now();
+    const DAY = 86400000;
+    if (b.dataset.g === 'now') setGroundTime(now, true);
+    else if (b.dataset.g === 'tonight') setGroundTime(G.tonight(now, gs.place.tz), false);
+    else if (b.dataset.g === 'prev') setGroundTime(gs.t - DAY, false);
+    else if (b.dataset.g === 'next') setGroundTime(gs.t + DAY, false);
+  });
+  gel.place.addEventListener('change', () => {
+    const c = G.CITIES[+gel.place.value];
+    if (c) setPlace(c);
+  });
+  gel.locate.addEventListener('click', () => {
+    if (!navigator.geolocation) {
+      gel.note.textContent = 'This browser cannot share its location. Pick the nearest city instead.';
+      gel.note.hidden = false;
+      return;
+    }
+    gel.locate.classList.add('busy');
+    // The position stays in this page: it is only used to turn the sky.
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        gel.locate.classList.remove('busy');
+        const round = (x) => Math.round(x * 100) / 100;
+        setPlace({ name: 'My location', lat: round(pos.coords.latitude), lon: round(pos.coords.longitude), tz: G.browserZone() });
+      },
+      () => {
+        gel.locate.classList.remove('busy');
+        gs.shownMinute = '';
+        gel.note.textContent = 'Your location is not available. Pick the nearest city instead.';
+        gel.note.hidden = false;
+      },
+      { timeout: 12000, maximumAge: 600000 },
+    );
+  });
+
+  function enterGround() {
+    if (!gs.place) {
+      fillPlaces();
+      gs.place = savedPlace() || G.guessPlace();
+      showPlace();
+    }
+    const now = Date.now();
+    gs.savedTime = state.time;
+    gs.t0 = 0;
+    // Start at night: now if it is dark there, else tonight at 22:00.
+    const sunNow = G.altAz(G.skyBodies(now, gs.place)[0].v, G.horizonFrame(now, gs.place)).alt;
+    if (sunNow > -8) setGroundTime(G.tonight(now, gs.place.tz), false);
+    else setGroundTime(now, true);
+    cam.hor = gs.frame;
+    cam.ground = true;
+    cam.morph = 0;
+    cam.az = gs.place.lat >= 0 ? 180 : 0; // face the equator, where the planets and the ecliptic are
+    cam.alt = 30;
+    cam.gFov = gFovTarget = W < DESKTOP_MIN ? 100 : 110;
+    cam.update();
+  }
+
+  function startGroundFly(az1, alt1, fov1) {
+    let dAz = az1 - cam.az;
+    if (dAz > 180) dAz -= 360;
+    if (dAz < -180) dAz += 360;
+    fly = {
+      kind: 'ground',
+      az0: cam.az,
+      dAz,
+      alt0: cam.alt,
+      alt1,
+      f0: cam.gFov,
+      f1: clamp(fov1, GROUND_FOV[0], GROUND_FOV[1]),
+      t: 0,
+      dur: reduceMotion ? 0.01 : 0.7 + Math.min(1, Math.abs(dAz) / 180) * 0.6,
+    };
+    zoomAnchor = null;
+    vel = { ra: 0, dec: 0, panX: 0, panY: 0, lon: 0 };
+  }
+
   // ------------------------------------------------------------ sizing ----
   let W = 1;
   let H = 1;
@@ -293,7 +623,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
     dpr = Math.min(2, window.devicePixelRatio || 1);
     const desktop = W >= DESKTOP_MIN;
     view.classList.toggle('narrow', !desktop);
-    const timeH = tm.el.offsetHeight || 120;
+    const timeH = (state.mode === 'ground' ? gbar : tm.el).offsetHeight || 120;
     const x0 = desktop ? Math.min(LEFT_PANEL, W * 0.4) : 0;
     const focus = desktop
       ? { x0, x1: W - 64, y0: 8, y1: H - timeH - 28 }
@@ -309,7 +639,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
   let avoidRects = [];
   function measureAvoid() {
     const vr = view.getBoundingClientRect();
-    avoidRects = [hud.querySelector('.sky-controls'), zoomBox, tm.el]
+    avoidRects = [hud.querySelector('.sky-controls'), zoomBox, tm.el, gbar]
       .map((el) => el.getBoundingClientRect())
       .filter((r) => r.width > 0 && r.height > 0)
       .map((r) => ({ x0: r.left - vr.left - 6, y0: r.top - vr.top - 6, x1: r.right - vr.left + 6, y1: r.bottom - vr.top + 6 }));
@@ -329,6 +659,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
   resizeObs.observe(view);
   resizeObs.observe(hud.querySelector('.sky-controls'));
   resizeObs.observe(tm.el);
+  resizeObs.observe(gbar);
   layout();
   measureAvoid();
   // devicePixelRatio can change without a resize (window dragged to another screen).
@@ -354,6 +685,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
     tm.setPlaying(p);
   }
   function togglePlay() {
+    if (state.mode === 'ground') return toggleGroundPlay();
     stopAuto();
     if (!state.playing && state.time >= tMax - 1e-3) setTimeInternal(tMin);
     setPlaying(!state.playing);
@@ -366,8 +698,30 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
     needsRender = true;
   }
 
-  function setMode(mode) {
-    if (mode === state.mode || morphAnim) return;
+  let switching = false;
+  const loadGround = () => (G ? Promise.resolve(G) : import('./ground.js').then((m) => (G = m)));
+  // Fetch the ground view's code once the map is up, so "From Earth" opens at once.
+  setTimeout(() => (window.requestIdleCallback || setTimeout)(() => loadGround().catch(() => {})), 4000);
+  async function setMode(mode) {
+    if (mode === state.mode || morphAnim || switching) return;
+    if (mode === 'ground' || state.mode === 'ground') {
+      // The ground view is a different projection: cross-fade instead of morphing.
+      switching = true;
+      view.classList.add('switching');
+      try {
+        await Promise.all([loadGround(), new Promise((r) => setTimeout(r, reduceMotion ? 0 : 180))]);
+      } catch (err) {
+        console.warn('[sky] ground view unavailable', err);
+        view.classList.remove('switching');
+        switching = false;
+        return;
+      }
+      switchGround(mode);
+      // Two frames so the new view is drawn before it fades in.
+      requestAnimationFrame(() => requestAnimationFrame(() => view.classList.remove('switching')));
+      switching = false;
+      return;
+    }
     stopAuto();
     vel = { ra: 0, dec: 0, panX: 0, panY: 0, lon: 0 };
     fly = null;
@@ -389,17 +743,65 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
     morphAnim = { from: cam.morph, to: mode === 'map' ? 1 : 0, t: 0, dur: reduceMotion ? 0.01 : 1.1 };
     hud.querySelectorAll('.sky-proj button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
     hideReadout();
+    onMode(mode);
+  }
+
+  function switchGround(mode) {
+    stopAuto();
+    vel = { ra: 0, dec: 0, panX: 0, panY: 0, lon: 0 };
+    fly = null;
+    zoomAnchor = null;
+    morphAnim = null;
+    if (mode === 'ground') {
+      state.mode = 'ground';
+      setPlaying(false);
+      enterGround();
+    } else {
+      // Leave looking at the same part of the sky.
+      const { ra, dec } = cam;
+      const fov = cam.gFov;
+      setGroundPlaying(false);
+      cam.ground = false;
+      state.mode = mode;
+      if (gs.savedTime !== null) setTimeInternal(gs.savedTime);
+      if (mode === 'map') {
+        cam.morph = 1;
+        cam.lon0 = ra;
+        cam.mapZoom = mapZoomTarget = 1;
+        cam.panX = cam.panY = 0;
+      } else {
+        cam.morph = 0;
+        cam.ra = ra;
+        cam.dec = dec;
+        const R = cam.fitMin / 2 / Math.sin(Math.min(fov, 170) * DEG / 2);
+        cam.zoom = zoomTarget = clamp(R / cam.Rfit, 0.55, cam.maxZoom);
+      }
+      cam.update();
+    }
+    tm.el.hidden = mode === 'ground';
+    gbar.hidden = mode !== 'ground';
+    view.classList.toggle('ground', mode === 'ground');
+    hud.querySelectorAll('.sky-proj button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+    hideReadout();
+    layout();
+    measureAvoid();
+    needsRender = true;
+    onMode(mode);
   }
 
   function zoomBy(f, anchor = null) {
-    if (state.mode === 'globe') zoomTarget = clamp(zoomTarget * f, 0.55, cam.maxZoom);
+    if (state.mode === 'ground') gFovTarget = clamp(gFovTarget / f, GROUND_FOV[0], GROUND_FOV[1]);
+    else if (state.mode === 'globe') zoomTarget = clamp(zoomTarget * f, 0.55, cam.maxZoom);
     else mapZoomTarget = clamp(mapZoomTarget * f, 1, cam.maxMapZoom);
     zoomAnchor = anchor;
     fly = null;
   }
 
   function resetView() {
-    if (state.mode === 'globe') {
+    if (state.mode === 'ground') {
+      startGroundFly(gs.place && gs.place.lat < 0 ? 0 : 180, 30, W < DESKTOP_MIN ? 100 : 110);
+      gFovTarget = fly.f1;
+    } else if (state.mode === 'globe') {
       startFly(radecToVec(270, 28), 1);
     } else {
       fly = null;
@@ -429,7 +831,16 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
   function flyTo(ra, dec) {
     stopAuto();
     const v = radecToVec(ra, dec);
-    if (state.mode === 'globe') {
+    if (state.mode === 'ground') {
+      const { az, alt } = cam.altAzOf(v);
+      startGroundFly(az, clamp(alt, 12, 80), Math.min(cam.gFov, 60));
+      gFovTarget = fly.f1;
+      if (alt < 0) {
+        gs.shownMinute = '';
+        gel.note.textContent = `That spot is ${Math.round(-alt)}° below the horizon at this time. Drag the time to see it rise.`;
+        gel.note.hidden = false;
+      }
+    } else if (state.mode === 'globe') {
       // About a 20 degree field.
       const R = cam.fitMin / 2 / Math.sin(10 * DEG);
       startFly(v, Math.max(cam.zoom, R / cam.Rfit));
@@ -464,6 +875,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
     zoomAnchor = null;
     zoomTarget = cam.zoom;
     mapZoomTarget = cam.mapZoom;
+    gFovTarget = cam.gFov;
     vel = { ra: 0, dec: 0, panX: 0, panY: 0, lon: 0 };
     if (pointers.size === 1) {
       drag = {
@@ -484,7 +896,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       pinch = {
         d0: Math.hypot(a.x - b.x, a.y - b.y) || 1,
-        z0: state.mode === 'globe' ? cam.zoom : cam.mapZoom,
+        z0: state.mode === 'ground' ? cam.gFov : state.mode === 'globe' ? cam.zoom : cam.mapZoom,
         v: cam.unproject(mid.x, mid.y),
       };
     }
@@ -506,7 +918,11 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
       const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       const z = pinch.z0 * (d / pinch.d0);
-      if (state.mode === 'globe') {
+      if (state.mode === 'ground') {
+        cam.gFov = gFovTarget = clamp(pinch.z0 * (pinch.d0 / d), GROUND_FOV[0], GROUND_FOV[1]);
+        cam.update();
+        if (pinch.v) cam.anchorGround(pinch.v, mid.x, mid.y);
+      } else if (state.mode === 'globe') {
         cam.zoom = zoomTarget = clamp(z, 0.55, cam.maxZoom);
         cam.update();
         if (pinch.v) cam.anchorGlobe(pinch.v, mid.x, mid.y);
@@ -530,7 +946,20 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
     drag.y = e.offsetY;
     drag.t = now;
     const k = 0.75; // velocity smoothing
-    if (state.mode === 'globe') {
+    if (state.mode === 'ground') {
+      // Grab the sky: dragging right turns the view left. ~2/R radians per px at the center.
+      const s = (2 / cam.R) * RAD;
+      const az0 = cam.az;
+      const alt0 = cam.alt;
+      cam.az -= (dx * s) / Math.max(Math.cos(cam.alt * DEG), 0.3);
+      cam.alt += dy * s;
+      cam.update();
+      let dAz = cam.az - az0;
+      if (dAz > 180) dAz -= 360;
+      if (dAz < -180) dAz += 360;
+      vel.ra = vel.ra * (1 - k) + (dAz / dt) * k;
+      vel.dec = vel.dec * (1 - k) + ((cam.alt - alt0) / dt) * k;
+    } else if (state.mode === 'globe') {
       const ra0 = cam.ra;
       const dec0 = cam.dec;
       if (drag.grab && cam.unprojectGlobe(e.offsetX, e.offsetY)) {
@@ -614,14 +1043,29 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
   function pick(x, y) {
     const v = cam.unproject(x, y);
     if (!v) return;
-    const [ra, dec] = vecToRadec(...v);
+    let [ra, dec] = vecToRadec(...v);
+    let extra;
+    if (state.mode === 'ground') {
+      // A planet under the finger opens the Lab following that body.
+      let best = null;
+      for (const b of gs.bodies) {
+        if (!TRACKABLE.includes(b.name)) continue;
+        const p = cam.project(b.v);
+        const d = Math.hypot(p.x - x, p.y - y);
+        if (p.vis > 0.3 && d < 18 && (!best || d < best.d)) best = { b, d };
+      }
+      if (best) {
+        [ra, dec] = [best.b.ra, best.b.dec];
+        extra = { body: best.b.name };
+      } else if (cam.altOf(v) < 0) return; // the ground
+    }
     const ripple = document.createElement('div');
     ripple.className = 'sky-ripple';
     ripple.style.left = `${x}px`;
     ripple.style.top = `${y}px`;
     view.appendChild(ripple);
     setTimeout(() => ripple.remove(), 900);
-    setTimeout(() => onPick(ra, dec), reduceMotion ? 0 : 420);
+    setTimeout(() => onPick(ra, dec, extra), reduceMotion ? 0 : 420);
   }
 
   function onKey(e) {
@@ -649,7 +1093,10 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
         const sx = e.key === 'ArrowLeft' ? 1 : e.key === 'ArrowRight' ? -1 : 0;
         const sy = e.key === 'ArrowUp' ? 1 : e.key === 'ArrowDown' ? -1 : 0;
         // Inertia glides ~ v / 3.2, so each press moves about a quarter of the view.
-        if (state.mode === 'globe') {
+        if (state.mode === 'ground') {
+          vel.ra -= (sx * step) / Math.max(Math.cos(cam.alt * DEG), 0.3);
+          vel.dec += sy * step;
+        } else if (state.mode === 'globe') {
           vel.ra += (sx * step) / Math.max(Math.cos(cam.dec * DEG), 0.2);
           vel.dec += sy * step;
         } else if (cam.mapZoom < 1.05 && sx) {
@@ -694,12 +1141,18 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
       hideReadout();
       return;
     }
+    if (state.mode === 'ground') {
+      const { az, alt } = cam.altAzOf(v);
+      if (alt < 0) {
+        hideReadout();
+        return;
+      }
+      ro.hor.textContent = `${alt.toFixed(1)}°  ${az.toFixed(0)}° ${G.compassPoint(az)}`;
+    }
     canvas.classList.add('on-sky');
     const [ra, dec] = vecToRadec(...v);
-    const [l, b] = equatorialToGalactic(ra, dec);
     ro.ra.textContent = formatRa(ra);
     ro.dec.textContent = formatDec(dec);
-    ro.gal.textContent = `l ${l.toFixed(2)}°  b ${b >= 0 ? '+' : '−'}${Math.abs(b).toFixed(2)}°`;
     const end = Math.min(upperBound(fp.t, state.time - mjd0), fp.filled * DETECTORS);
     const r = visitsAt(fp, P.vec, v, end);
     if (r.visits) {
@@ -776,7 +1229,11 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
     if (fly) {
       fly.t = Math.min(1, fly.t + dt / fly.dur);
       const e = easeInOutCubic(fly.t);
-      if (fly.kind === 'globe') {
+      if (fly.kind === 'ground') {
+        cam.az = fly.az0 + fly.dAz * e;
+        cam.alt = fly.alt0 + (fly.alt1 - fly.alt0) * e;
+        cam.gFov = gFovTarget = Math.exp(Math.log(fly.f0) + (Math.log(fly.f1) - Math.log(fly.f0)) * e);
+      } else if (fly.kind === 'globe') {
         const c = slerp(fly.from, fly.to, e);
         const [ra, dec] = vecToRadec(...c);
         cam.ra = ra;
@@ -793,7 +1250,12 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
     }
     // Smooth zoom toward target, keeping the anchor point under the cursor.
     const zk = 1 - Math.exp(-dt * 14);
-    if (state.mode === 'globe' && Math.abs(Math.log(zoomTarget / cam.zoom)) > 1e-4) {
+    if (state.mode === 'ground' && Math.abs(Math.log(gFovTarget / cam.gFov)) > 1e-4) {
+      cam.gFov *= Math.pow(gFovTarget / cam.gFov, zk);
+      cam.update();
+      if (zoomAnchor) cam.anchorGround(zoomAnchor.v, zoomAnchor.x, zoomAnchor.y);
+      moved = true;
+    } else if (state.mode === 'globe' && Math.abs(Math.log(zoomTarget / cam.zoom)) > 1e-4) {
       cam.zoom *= Math.pow(zoomTarget / cam.zoom, zk);
       cam.update();
       if (zoomAnchor) cam.anchorGlobe(zoomAnchor.v, zoomAnchor.x, zoomAnchor.y);
@@ -808,8 +1270,13 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
     if (!drag && !pinch) {
       const decay = Math.exp(-dt * 3.2);
       if (Math.abs(vel.ra) + Math.abs(vel.dec) > 0.01) {
-        cam.ra += vel.ra * dt;
-        cam.dec += vel.dec * dt;
+        if (state.mode === 'ground') {
+          cam.az += vel.ra * dt;
+          cam.alt += vel.dec * dt;
+        } else {
+          cam.ra += vel.ra * dt;
+          cam.dec += vel.dec * dt;
+        }
         vel.ra *= decay;
         vel.dec *= decay;
         moved = true;
@@ -857,6 +1324,18 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
       dirty = true;
     }
 
+    if (state.mode === 'ground' && gs.place) {
+      if (gs.playing) {
+        const t = Math.min(gs.t1, gs.t + NIGHT_SPEED * 1000 * dt);
+        if (t >= gs.t1) setGroundPlaying(false);
+        setGroundTime(t, false);
+      } else if (gs.live && now - gs.lastLive > 1000) {
+        gs.lastLive = now;
+        setGroundTime(Date.now(), true);
+      }
+      if (needsRender) dirty = true;
+      needsRender = false;
+    }
     if (state.playing) {
       state.time += state.speed * dt;
       if (state.time >= tMax) {
@@ -891,7 +1370,9 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
     if (layers.ecliptic) lines.push({ name: 'ecliptic', color: [1.0, 0.75, 0.45, 0.75], width: 1.4, dash: 3 });
     if (layers.constellations) lines.push({ name: 'constellations', color: [0.6, 0.7, 1.0, 0.42], width: 1.1 });
     const builtEnd = Math.min(end, renderer.fpBuilt, renderer.cubeN || end);
-    const scanStart = Math.min(builtEnd, upperBound(fp.t, rel - SCAN_WINDOW));
+    // From Earth, the "just observed" glow only means something on dates inside the survey.
+    const groundPast = state.mode === 'ground' && gs.t / 86400000 + 40587 > tMax + SCAN_WINDOW;
+    const scanStart = groundPast ? builtEnd : Math.min(builtEnd, upperBound(fp.t, rel - SCAN_WINDOW));
     renderer.render({
       cam,
       time: rel,
@@ -904,11 +1385,16 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
       scanWindow: SCAN_WINDOW,
       scanStart,
       scanEnd: builtEnd,
-      scanGain: 1,
+      scanGain: state.mode === 'ground' ? 0.6 : 1,
+      footGain: state.mode === 'ground' ? 0.75 : 1,
       outlineAlpha: 0.04 * smoothstep(18, 5, fov),
       edge: smoothstep(25, 6, fov),
-      starScale: clamp(Math.pow(cam.morph > 0.5 ? cam.mapZoom : cam.zoom, 0.22), 1, 2.2) * (W < DESKTOP_MIN ? 0.85 : 1),
-      starBright: 1,
+      starScale:
+        state.mode === 'ground'
+          ? clamp(Math.pow(110 / cam.gFov, 0.3), 1, 2.2) * 1.1
+          : clamp(Math.pow(cam.morph > 0.5 ? cam.mapZoom : cam.zoom, 0.22), 1, 2.2) * (W < DESKTOP_MIN ? 0.85 : 1),
+      starBright: state.mode === 'ground' ? 1 - 0.85 * gs.day : 1,
+      sun: state.mode === 'ground' ? gs.sun : null,
     });
     // Reticle on the newest pointing within the scan window.
     reticleActive = false;
@@ -936,6 +1422,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
       galactic: layers.galactic,
       footprints: layers.footprints,
       reticle: reticleActive && reticleV ? { v: reticleV, phase: ((now || 0) / 1400) % 1 } : null,
+      ground: state.mode === 'ground' ? { bodies: gs.bodies, day: gs.day, compass: G.compassPoint } : null,
     });
   }
 
@@ -969,6 +1456,9 @@ export function mountSkyView(root, { pointings: P, onPick = () => {} } = {}) {
     },
     flyTo(ra, dec) {
       flyTo(ra, dec);
+    },
+    setMode(mode) {
+      return setMode(mode === 'earth' ? 'ground' : mode);
     },
     destroy() {
       stop();
