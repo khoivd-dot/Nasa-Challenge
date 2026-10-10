@@ -143,7 +143,13 @@ uniform float uMW;
 uniform float uCountScale;
 uniform float uSatLog;
 uniform float uEdge;
-uniform vec3 uPassCol[4];
+uniform vec3 uRamp[7];
+// Coverage ramp (palette.js COVERAGE): cool ink to warm paper.
+vec3 coverageRamp(float t) {
+  float x = clamp(t, 0.0, 1.0) * 6.0;
+  int i = int(min(floor(x), 5.0));
+  return mix(uRamp[i], uRamp[i + 1], x - float(i));
+}
 vec3 skyLayers(vec3 d) {
   vec3 col = vec3(0.0);
   if (uMW > 0.0) {
@@ -158,13 +164,13 @@ vec3 skyLayers(vec3 d) {
     // Footprint edges: the visit count steps across a footprint boundary.
     float edge = min(fwidth(total), 3.0) * uEdge;
     if (total > 0.002) {
-      // Hue leans to the most recent pass; brightness follows log(visits).
-      vec4 w = c * vec4(1.0, 2.0, 4.0, 8.0);
-      vec3 hue = (w.r * uPassCol[0] + w.g * uPassCol[1] + w.b * uPassCol[2] + w.a * uPassCol[3]) / (w.r + w.g + w.b + w.a);
+      // Color follows log(visits) along the coverage ramp. Typical coverage
+      // stays a dark slate so the stars read first; only the deep fields,
+      // visited thousands of times, reach the warm paper end.
       float I = clamp(log2(1.0 + total) / uSatLog, 0.0, 1.0);
+      float t = pow(I, 2.6);
       float cover = clamp(total, 0.0, 1.0);
-      float lum = 0.115 + 0.28 * pow(I, 1.8) + 0.04 * edge;
-      vec3 f = hue * lum + vec3(1.0, 0.95, 0.88) * pow(smoothstep(0.6, 1.0, I), 2.0) * 0.9;
+      vec3 f = coverageRamp(t) * (0.22 + 0.78 * t) + 0.04 * edge;
       col += f * cover * uFoot;
     }
   }

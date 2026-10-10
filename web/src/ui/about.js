@@ -7,6 +7,7 @@ import '../styles/about.css';
 import { createAboutSky } from './about-sky.js';
 import { mountHunt } from './about-hunt.js';
 import { mountPaint } from './about-paint.js';
+import { spectrumHex } from './palette.js';
 
 // SPHEREx's six bands, each split into 17 colors (micrometers).
 const BANDS = [
@@ -31,7 +32,6 @@ const CHANNELS = BANDS.flatMap(([lo, hi], b) => Array.from({ length: 17 }, (_, k
 const spanLog = Math.log(5 / 0.75);
 const pos = (um) => Math.log(um / 0.75) / spanLog;
 // False color: shortest infrared drawn violet, longest red.
-const hue = (um) => Math.round(265 - 265 * pos(um));
 
 const HOW = [
   { n: '01', title: 'Pick a spot', text: 'Click anywhere on the sky map, search a name or coordinates (press <span class="kbd">/</span>), or open a story.', href: '#/sky', cta: 'Open the sky map' },
@@ -112,7 +112,7 @@ const HTML = `
       </header>
       <div class="spec panel rv">
         <div class="spec-marks">${FEATURES.map((f) => `<span style="left:${(pos(f.um) * 100).toFixed(2)}%">${f.um}</span>`).join('')}</div>
-        <div class="spec-bars">${CHANNELS.map((c, i) => `<i style="--i:${i};--h:${hue(c.um)}"></i>`).join('')}</div>
+        <div class="spec-bars">${CHANNELS.map((c, i) => `<i style="--i:${i};--c:${spectrumHex(c.um)}"></i>`).join('')}</div>
         <input class="spec-range" type="range" min="0" max="101" value="63" aria-label="Pick one of SPHEREx’s 102 colors" />
         <div class="spec-axis mono">${[0.75, 1, 2, 3, 4, 5].map((u) => `<span style="left:${(pos(u) * 100).toFixed(2)}%">${u}${u === 5 ? ' µm' : ''}</span>`).join('')}</div>
         <div class="spec-read" aria-live="polite"></div>
@@ -316,7 +316,7 @@ export function mountAbout(root, { pointingsReady }) {
     let best = null;
     for (const f of FEATURES) if (!best || Math.abs(f.um - c.um) < Math.abs(best.um - c.um)) best = f;
     const near = Math.abs(best.um - c.um) < 0.22;
-    read.style.setProperty('--h', hue(c.um));
+    read.style.setProperty('--c', spectrumHex(c.um));
     read.innerHTML = `
       <div class="spec-um"><b class="mono">${c.um.toFixed(2)} µm</b><span>Band ${c.band} · color ${i + 1} of 102</span></div>
       <div class="spec-what">${

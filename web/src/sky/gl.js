@@ -42,7 +42,7 @@ function compile(gl, type, source) {
 
 /**
  * Set uniforms from a plain object. Numbers -> 1f, arrays by length
- * (2/3/4 -> vecN, 9 -> mat3, 12 -> vec3[4]), {i: n} -> 1i.
+ * (2/3/4 -> vecN, 9 -> mat3, 12 -> vec3[4], 21 -> vec3[7]), {i: n} -> 1i.
  */
 export function setUniforms(gl, p, values) {
   for (const k in values) {
@@ -55,7 +55,7 @@ export function setUniforms(gl, p, values) {
     else if (v.length === 3) gl.uniform3fv(loc, v);
     else if (v.length === 4) gl.uniform4fv(loc, v);
     else if (v.length === 9) gl.uniformMatrix3fv(loc, false, v);
-    else if (v.length === 12) gl.uniform3fv(loc, v);
+    else if (v.length === 12 || v.length === 21) gl.uniform3fv(loc, v);
   }
 }
 

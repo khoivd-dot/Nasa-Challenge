@@ -5,6 +5,7 @@
 
 import { tanProject } from '../data/sky-math.js';
 import { esc } from './esc.js';
+import { SURVEY, NIGHT, PLATE, SODIUM, HALPHA, alpha } from './palette.js';
 
 const MOON = 0.52; // the full Moon's width in degrees, for scale
 const LEVELS = [
@@ -186,11 +187,11 @@ export function mountHunt(root, { stars, reduceMotion }) {
   function draw() {
     if (!w || !h) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#03040a';
+    ctx.fillStyle = NIGHT[0];
     ctx.fillRect(0, 0, w, h);
     if (!round) return;
     // A faint 5-degree grid, like the reseau lines on a survey plate.
-    ctx.strokeStyle = 'rgba(140,160,255,0.07)';
+    ctx.strokeStyle = alpha(PLATE[0], 0.06);
     ctx.lineWidth = 1;
     for (let g = -60; g <= 60; g += 5) {
       const [gx, gy] = toPx(g, g);
@@ -203,15 +204,15 @@ export function mountHunt(root, { stars, reduceMotion }) {
     }
     for (const st of round.stars) {
       const [x, y] = toPx(st.x, st.y);
-      if (x > -10 && y > -10 && x < w + 10 && y < h + 10) dot(x, y, st.mag, '#eef2ff');
+      if (x > -10 && y > -10 && x < w + 10 && y < h + 10) dot(x, y, st.mag, PLATE[0]);
     }
     const P = round.planet;
     const [ax, ay] = toPx(P[0].x, P[0].y);
     const [bx, by] = toPx(P[1].x, P[1].y);
     if (found) {
       // Both positions at once, joined by the path, in the survey colors.
-      dot(ax, ay, Math.max(P[0].mag, DISGUISE_MAG), '#4cc9ff');
-      dot(bx, by, Math.max(P[1].mag, DISGUISE_MAG), '#ffb347');
+      dot(ax, ay, Math.max(P[0].mag, DISGUISE_MAG), SURVEY[1]);
+      dot(bx, by, Math.max(P[1].mag, DISGUISE_MAG), SURVEY[2]);
       ctx.strokeStyle = 'rgba(255,255,255,0.75)';
       ctx.lineWidth = 1.5;
       ctx.setLineDash([4, 5]);
@@ -220,17 +221,17 @@ export function mountHunt(root, { stars, reduceMotion }) {
       ctx.lineTo(bx, by);
       ctx.stroke();
       ctx.setLineDash([]);
-      ring(ax, ay, 13, '#4cc9ff');
-      ring(bx, by, 13, '#ffb347');
+      ring(ax, ay, 13, SURVEY[1]);
+      ring(bx, by, 13, SURVEY[2]);
     } else {
       const q = P[plate];
       const [x, y] = plate ? [bx, by] : [ax, ay];
-      dot(x, y, Math.max(q.mag, DISGUISE_MAG), '#eef2ff');
-      if (hint) ring(hint.x, hint.y, hint.r, 'rgba(255,184,92,0.75)', [6, 6]);
+      dot(x, y, Math.max(q.mag, DISGUISE_MAG), PLATE[0]);
+      if (hint) ring(hint.x, hint.y, hint.r, alpha(SODIUM.base, 0.75), [6, 6]);
     }
     for (const m of misses) {
       ctx.globalAlpha = m.a;
-      ctx.strokeStyle = '#ff6b8b';
+      ctx.strokeStyle = HALPHA.base;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(m.x - 7, m.y - 7);
@@ -349,7 +350,7 @@ export function mountHunt(root, { stars, reduceMotion }) {
     const [x, y] = toPx(P[plate].x, P[plate].y);
     el.burst.style.left = `${x}px`;
     el.burst.style.top = `${y}px`;
-    const colors = ['#4cc9ff', '#c77dff', '#ffb347', '#ffffff', '#6dffb0'];
+    const colors = [SURVEY[1], SURVEY[2], SURVEY[3], PLATE[0], SODIUM.base];
     for (let i = 0; i < 26; i++) {
       const s = document.createElement('i');
       const a = (i / 26) * 2 * Math.PI + Math.random() * 0.3;

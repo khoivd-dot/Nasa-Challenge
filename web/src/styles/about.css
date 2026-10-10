@@ -2,10 +2,10 @@
 .view-about.about-page {
   /* The opening is a homage to space-opera title crawls; these two colors
      stay on this page. */
-  --crawl: #feda4a;
-  --cool: #9fb8d8;
+  --crawl: var(--about-crawl);
+  --cool: var(--about-streak);
   overflow: hidden;
-  background: radial-gradient(1200px 700px at 50% 120%, rgba(255, 140, 60, 0.07), transparent 70%), #020309;
+  background: radial-gradient(1200px 700px at 50% 120%, rgba(255, 140, 60, 0.07), transparent 70%), var(--night-0);
 }
 .ab-sky {
   position: absolute;
@@ -645,14 +645,14 @@
   flex: 1;
   height: 100%;
   border-radius: 1px 1px 0 0;
-  background: linear-gradient(to top, hsl(var(--h) 92% 56% / 0.95), hsl(var(--h) 92% 62% / 0.12));
+  background: linear-gradient(to top, var(--c), color-mix(in srgb, var(--c) 12%, transparent));
   transform-origin: bottom;
   animation: spec-wave 3.4s ease-in-out infinite;
   animation-delay: calc(var(--i) * -55ms);
 }
 .spec-bars i.on {
-  background: linear-gradient(to top, #fff, hsl(var(--h) 95% 72%));
-  box-shadow: 0 0 14px hsl(var(--h) 95% 60%);
+  background: linear-gradient(to top, var(--plate-1), var(--c));
+  box-shadow: 0 0 14px var(--c);
 }
 @keyframes spec-wave {
   0%,
@@ -728,7 +728,7 @@ input.spec-range::-moz-range-thumb {
   display: block;
   font-size: 30px;
   line-height: 1;
-  color: hsl(var(--h) 95% 70%);
+  color: var(--c);
   margin-bottom: 6px;
 }
 .spec-um span {
@@ -809,8 +809,11 @@ input.spec-range::-moz-range-thumb {
   color: var(--accent);
   border-bottom: 1px solid rgba(255, 178, 62, 0.45);
 }
+.how-go,
 .how-go:hover {
   text-decoration: none;
+}
+.how-go:hover {
   border-bottom-color: var(--accent);
 }
 

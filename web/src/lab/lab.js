@@ -18,6 +18,7 @@ import { STORIES, storyById } from './stories.js';
 import { queryKnownObjects } from './skybot.js';
 import { drizzle, paintColor } from './deep.js';
 import { lookupWave } from '../fits/spherex.js';
+import { MARKS, PLATE, alpha } from '../ui/palette.js';
 
 // One plain sentence per view, shown under the toolbar (tooltips never show on touch screens).
 const MODE_HINT = {
@@ -719,18 +720,18 @@ export function mountLab(root, { pointingsReady, onBack }) {
         ctx.clip();
         ctx.drawImage(frameCanvas(f), ox, oy, N * k, N * k);
         ctx.restore();
-        ctx.fillStyle = '#fff';
+        ctx.fillStyle = PLATE[0];
         ctx.fillRect(sx - 1, oy, 2, N * k);
         // Handle sits low so it never covers the target in the middle.
         const hy = oy + N * k * 0.82;
         ctx.beginPath();
         ctx.arc(sx, hy, 11, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(10,14,30,.85)';
+        ctx.fillStyle = alpha(MARKS.halo, 0.85);
         ctx.fill();
-        ctx.strokeStyle = '#fff';
+        ctx.strokeStyle = PLATE[0];
         ctx.lineWidth = 2;
         ctx.stroke();
-        ctx.fillStyle = '#fff';
+        ctx.fillStyle = PLATE[0];
         ctx.font = '600 11px "Archivo Variable", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
@@ -743,7 +744,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
     }
 
     // Frame border
-    ctx.strokeStyle = 'rgba(160,180,255,.18)';
+    ctx.strokeStyle = alpha(MARKS.grid, 0.16);
     ctx.lineWidth = 1;
     ctx.strokeRect(ox - 0.5, oy - 0.5, N * k + 1, N * k + 1);
 
@@ -753,12 +754,12 @@ export function mountLab(root, { pointingsReady, onBack }) {
     renderHud(f, list);
   }
 
-  function label(x, y, text, align = 'left', color = '#fff') {
+  function label(x, y, text, align = 'left', color = PLATE[0]) {
     ctx.font = '500 12px "Archivo Variable", sans-serif';
     ctx.textAlign = align;
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(4,5,11,.85)';
+    ctx.strokeStyle = alpha(MARKS.halo, 0.85);
     ctx.strokeText(text, x, y);
     ctx.fillStyle = color;
     ctx.fillText(text, x, y);
@@ -777,7 +778,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
     if (tp && S.mode !== 'trails') {
       const [x, y] = toScreen(...tp);
       const r = Math.max(10, 4 * k);
-      ctx.strokeStyle = 'rgba(92,225,255,.9)';
+      ctx.strokeStyle = MARKS.target;
       ctx.lineWidth = 1.5;
       for (const [a, b] of [
         [-1, 0],
@@ -802,28 +803,28 @@ export function mountLab(root, { pointingsReady, onBack }) {
       if (!p || p[0] < -2 || p[1] < -2 || p[0] > N + 1 || p[1] > N + 1) continue;
       const [x, y] = toScreen(...p);
       if (o.kind === 'star') {
-        ctx.strokeStyle = o.color ? `rgb(${o.color.map(Math.round).join(',')})` : 'rgba(255,184,92,.95)';
+        ctx.strokeStyle = o.color ? `rgb(${o.color.map(Math.round).join(',')})` : MARKS.target;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.arc(x, y, Math.max(6, 1.6 * k), 0, Math.PI * 2);
         ctx.stroke();
-        if (!o.color) label(x + Math.max(9, 2 * k), y - Math.max(9, 2 * k), `${o.name} (predicted)`, 'left', '#ffd9a8');
+        if (!o.color) label(x + Math.max(9, 2 * k), y - Math.max(9, 2 * k), `${o.name} (predicted)`, 'left', MARKS.targetLabel);
       } else if (o.color) {
         ctx.strokeStyle = `rgb(${o.color.map(Math.round).join(',')})`;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.arc(x, y, 9, 0, Math.PI * 2);
         ctx.stroke();
-        if (o.last) label(x + 12, y - 11, o.name, 'left', '#ffd9a8');
+        if (o.last) label(x + 12, y - 11, o.name, 'left', MARKS.targetLabel);
       } else {
         // The tracked body already sits under the reticle.
         if (o.kind === 'planet' && tgt.body === o.name && S.trackMode === 'track') continue;
-        ctx.strokeStyle = o.kind === 'moon' ? 'rgba(180,140,255,.95)' : 'rgba(255,184,92,.95)';
+        ctx.strokeStyle = o.kind === 'moon' ? MARKS.moon : MARKS.target;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.arc(x, y, o.kind === 'moon' ? 9 : 14, 0, Math.PI * 2);
         ctx.stroke();
-        label(x + 14, y - 12, o.name, 'left', o.kind === 'moon' ? '#d9c8ff' : '#ffd9a8');
+        label(x + 14, y - 12, o.name, 'left', o.kind === 'moon' ? PLATE[0] : MARKS.targetLabel);
       }
     }
     // Known objects from SkyBoT (only for the frame they were queried for)
@@ -832,17 +833,17 @@ export function mountLab(root, { pointingsReady, onBack }) {
         const p = skyToFrame(f.frame, o.ra, o.dec);
         if (!p) continue;
         const [x, y] = toScreen(...p);
-        ctx.strokeStyle = 'rgba(109,255,176,.95)';
+        ctx.strokeStyle = MARKS.known;
         ctx.lineWidth = 1.5;
         ctx.strokeRect(x - 8, y - 8, 16, 16);
-        label(x + 11, y - 11, o.name, 'left', '#b5ffd6');
+        label(x + 11, y - 11, o.name, 'left', MARKS.known);
       }
     }
     // Mover tracks
     if (S.movers) {
       S.movers.tracks.forEach((t, ti) => {
         const pts = t.points.map((p) => toScreen(p.x, p.y));
-        ctx.strokeStyle = 'rgba(255,107,139,.9)';
+        ctx.strokeStyle = MARKS.mover;
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 4]);
         ctx.beginPath();
@@ -854,24 +855,24 @@ export function mountLab(root, { pointingsReady, onBack }) {
           const here = list[S.cur] && Math.abs(p.mjd - list[S.cur].frame.mjd) < 1e-4;
           ctx.beginPath();
           ctx.arc(x, y, here ? 9 : 4, 0, Math.PI * 2);
-          ctx.strokeStyle = here ? '#fff' : 'rgba(255,107,139,.9)';
+          ctx.strokeStyle = here ? PLATE[0] : MARKS.mover;
           ctx.stroke();
         });
         const [lx, ly] = pts.at(-1);
-        label(lx + 10, ly + 12, `#${ti + 1}`, 'left', '#ffc2cf');
+        label(lx + 10, ly + 12, `#${ti + 1}`, 'left', MARKS.mover);
       });
     }
     // Spectrum probe: the aperture and the ring that sets its background.
     const pp = S.probe && probeIn(f.frame);
     if (pp) {
       const [x, y] = toScreen(...pp);
-      ctx.strokeStyle = '#ffe08a';
+      ctx.strokeStyle = MARKS.probe;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.arc(x, y, Math.max(5, APERTURE[0] * k), 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([3, 4]);
-      ctx.strokeStyle = 'rgba(255,224,138,.6)';
+      ctx.strokeStyle = alpha(MARKS.probe, 0.6);
       for (const r of APERTURE.slice(1)) {
         ctx.beginPath();
         ctx.arc(x, y, Math.max(8, r * k), 0, Math.PI * 2);
@@ -884,7 +885,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
       const p = skyToFrame(f.frame, m.ra, m.dec);
       if (!p) continue;
       const [x, y] = toScreen(...p);
-      ctx.strokeStyle = '#ffb85c';
+      ctx.strokeStyle = MARKS.measure;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(x - 7, y);
@@ -899,8 +900,8 @@ export function mountLab(root, { pointingsReady, onBack }) {
     // North up, east left. Scale bar: one arcminute.
     const x = ox + N * k - 18;
     const y = oy + N * k - 18;
-    ctx.strokeStyle = 'rgba(255,255,255,.75)';
-    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    ctx.strokeStyle = alpha(PLATE[0], 0.75);
+    ctx.fillStyle = alpha(PLATE[0], 0.85);
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -980,7 +981,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
     ctx.beginPath();
     ctx.rect(vx0, vy0, vx1 - vx0, vy1 - vy0);
     ctx.clip();
-    ctx.strokeStyle = 'rgba(150,185,255,.38)';
+    ctx.strokeStyle = alpha(MARKS.grid, 0.3);
     ctx.lineWidth = 1;
     for (const { pts } of lines) {
       ctx.beginPath();
@@ -996,7 +997,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
       const want = left ? vx0 + 6 : Math.min(vy1 - 40, ch - 46);
       const [x, y] = pts.reduce((b, p) => (Math.abs(p[left ? 0 : 1] - want) < Math.abs(b[left ? 0 : 1] - want) ? p : b));
       if (left ? y < vy0 + 60 || y > vy1 - 56 : x < vx0 + 40 || x > vx1 - 76) continue;
-      label(x + 4, left ? y - 8 : y, text, 'left', '#cfdcff');
+      label(x + 4, left ? y - 8 : y, text, 'left', PLATE[1]);
     }
   }
 
@@ -1029,7 +1030,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
       const y = gy + Math.floor(i / cols) * cell + pad;
       const s = cell - 2 * pad;
       ctx.drawImage(frameCanvas(f), x, y, s, s);
-      ctx.strokeStyle = i === S.cur ? '#fff' : `rgba(${f.color.map(Math.round).join(',')},.7)`;
+      ctx.strokeStyle = i === S.cur ? PLATE[0] : `rgba(${f.color.map(Math.round).join(',')},.7)`;
       ctx.lineWidth = i === S.cur ? 2 : 1;
       ctx.strokeRect(x, y, s, s);
       if (s > 70) label(x + 6, y + s - 10, fmtDay(f.frame.mjd), 'left');
@@ -1103,7 +1104,6 @@ export function mountLab(root, { pointingsReady, onBack }) {
     if (!t) return;
     const story = t.story;
     el.kicker.textContent = story ? story.kicker : t.kicker || '';
-    el.kicker.style.color = story ? story.accent : '';
     el.title.textContent = story ? story.title : t.name;
     const [l, b] = equatorialToGalactic(t.ra, t.dec);
     el.coords.innerHTML = t.track

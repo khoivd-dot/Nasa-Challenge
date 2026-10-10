@@ -4,18 +4,11 @@
 // outward: a jump to hyperspace drawn with real stars.
 
 import { DEG, radecToVec } from '../data/sky-math.js';
+import { starHex, ABOUT, alpha } from './palette.js';
 
 const FOV = 80; // diagonal field of view at rest, degrees
 const DRIFT = 0.35; // degrees of right ascension per second
 
-// B-V color index to a star tint, blue-white to orange.
-function tint(bv) {
-  if (bv < 0) return '#b8d0ff';
-  if (bv < 0.3) return '#e4ebff';
-  if (bv < 0.6) return '#fff7ea';
-  if (bv < 1) return '#ffe4be';
-  return '#ffc890';
-}
 
 export function createAboutSky(canvas, { reduceMotion = false } = {}) {
   const ctx = canvas.getContext('2d');
@@ -39,8 +32,8 @@ export function createAboutSky(canvas, { reduceMotion = false } = {}) {
     const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
     grad.addColorStop(0, 'rgba(255,255,255,1)');
     grad.addColorStop(0.18, 'rgba(255,255,255,0.85)');
-    grad.addColorStop(0.45, 'rgba(170,200,255,0.18)');
-    grad.addColorStop(1, 'rgba(170,200,255,0)');
+    grad.addColorStop(0.45, alpha(ABOUT.streak, 0.18));
+    grad.addColorStop(1, alpha(ABOUT.streak, 0));
     g.fillStyle = grad;
     g.fillRect(0, 0, 64, 64);
   }
@@ -161,7 +154,7 @@ export function createAboutSky(canvas, { reduceMotion = false } = {}) {
           v: radecToVec(ra, dec),
           r: Math.max(0.7, Math.min(2.8, 2.6 - 0.34 * mag)),
           a: Math.max(0.28, Math.min(1, 1.15 - 0.13 * mag)),
-          c: tint(Number.isFinite(bv) ? bv : 0.5),
+          c: starHex(bv),
         });
       }
       draw(0);

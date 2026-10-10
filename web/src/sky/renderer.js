@@ -10,6 +10,9 @@ import { createProgram, setUniforms, createBuffer, bindAttribs } from './gl.js';
 import { SHADERS } from './shaders.js';
 import { FP_STRIDE } from './footprints.js';
 import { LINE_STRIDE, STAR_STRIDE } from './layers.js';
+import { COVERAGE, hexRgb } from '../ui/palette.js';
+
+const COVERAGE_RGB = new Float32Array(COVERAGE.flatMap((h) => hexRgb(h).map((v) => v / 255)));
 
 const QUAD_ATTRS = ['aC0', 'aC1', 'aC2', 'aC3', 'aT'];
 const QUAD_LAYOUT = [
@@ -346,6 +349,7 @@ export class SkyRenderer {
       uMW: L.milkyway && this.mwReady ? 1 : 0,
       uCountScale: this.countScale,
       uSatLog: Math.log2(1 + s.saturation),
+      uRamp: COVERAGE_RGB,
       uEdge: s.edge ?? 1,
     };
     const bindSkyTextures = () => {

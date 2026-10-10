@@ -3,6 +3,7 @@
 // globe and the Hammer-Aitoff map.
 
 import { DEG, RAD, radecToVec, eclipticToEquatorial, galacticToEquatorial } from '../data/sky-math.js';
+import { starHex, hexRgb } from '../ui/palette.js';
 
 /** Floats per line segment instance: a (xyz), b (xyz), arc length at a (deg). */
 export const LINE_STRIDE = 7;
@@ -115,25 +116,9 @@ export function buildStars(stars) {
   return out;
 }
 
-/** Approximate star color from B-V (Ballesteros temperature + blackbody fit). */
+/** Star color from B-V: blackbody temperature, from the palette's star table. */
 export function bvToRgb(bv) {
-  const x = Math.max(-0.4, Math.min(2.0, bv ?? 0.6));
-  const T = 4600 * (1 / (0.92 * x + 1.7) + 1 / (0.92 * x + 0.62));
-  const t = T / 100;
-  let r, g, b;
-  if (t <= 66) {
-    r = 255;
-    g = 99.4708025861 * Math.log(t) - 161.1195681661;
-    b = t <= 19 ? 0 : 138.5177312231 * Math.log(t - 10) - 305.0447927307;
-  } else {
-    r = 329.698727446 * Math.pow(t - 60, -0.1332047592);
-    g = 288.1221695283 * Math.pow(t - 60, -0.0755148492);
-    b = 255;
-  }
-  const c = [r, g, b].map((v) => Math.max(0, Math.min(255, v)) / 255);
-  const m = Math.max(...c);
-  // Normalize and soften toward white so colors read as tints.
-  return c.map((v) => 0.4 + 0.6 * (v / m));
+  return hexRgb(starHex(bv ?? 0.6)).map((v) => v / 255);
 }
 
 /**

@@ -40,7 +40,10 @@ import {
 } from './layers.js';
 import { drawOverlay } from './labels.js';
 import { createTimeMachine, fmtDate } from './time-machine.js';
+import { SURVEY, PLATE, ICE, SUNPATH, hexRgb } from '../ui/palette.js';
 
+const rgb01 = (hex) => hexRgb(hex).map((v) => v / 255);
+const STARS_SWATCH = '#fff1ea'; // a G2 star, like the Sun
 const DESKTOP_MIN = 760;
 const LEFT_PANEL = 380;
 const RAIL_FOLDED = 44; // the stories rail folded to a tab
@@ -53,13 +56,13 @@ const NIGHT_SPEED = 20 * 60; // ground view time-lapse: seconds of sky per secon
 const TRACKABLE = ['Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto']; // bodies the Lab can follow
 
 const LAYERS = [
-  { id: 'footprints', label: 'SPHEREx footprints', short: 'Footprints', on: true, swatch: 'linear-gradient(135deg, var(--survey-1), var(--survey-2), var(--survey-3))' },
-  { id: 'stars', label: 'Hipparcos stars', short: 'Stars', on: true, swatch: '#fff3d6' },
-  { id: 'constellations', label: 'Constellations', short: 'Constellations', on: false, swatch: '#e6dcc6' },
-  { id: 'milkyway', label: 'Milky Way', short: 'Milky Way', on: false, swatch: '#c9c2b2' },
-  { id: 'grid', label: 'RA/Dec grid', short: 'Grid', on: false, swatch: '#a39d8e' },
-  { id: 'ecliptic', label: 'Ecliptic', short: 'Ecliptic', on: false, swatch: '#ffbe6e' },
-  { id: 'galactic', label: 'Galactic plane', short: 'Galactic', on: false, swatch: '#c896ff' },
+  { id: 'footprints', label: 'SPHEREx footprints', short: 'Footprints', on: true, swatch: 'var(--ramp-coverage)' },
+  { id: 'stars', label: 'Hipparcos stars', short: 'Stars', on: true, swatch: STARS_SWATCH },
+  { id: 'constellations', label: 'Constellations', short: 'Constellations', on: false, swatch: PLATE[0] },
+  { id: 'milkyway', label: 'Milky Way', short: 'Milky Way', on: false, swatch: PLATE[1] },
+  { id: 'grid', label: 'RA/Dec grid', short: 'Grid', on: false, swatch: PLATE[2] },
+  { id: 'ecliptic', label: 'Ecliptic', short: 'Ecliptic', on: false, swatch: SUNPATH },
+  { id: 'galactic', label: 'Galactic plane', short: 'Galactic', on: false, swatch: ICE },
 ];
 
 const ICON = {
@@ -150,7 +153,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {}, onMode = (
   let lastCounters = '';
 
   const css = getComputedStyle(document.documentElement);
-  const passHex = ['#6f7896', css.getPropertyValue('--survey-1').trim() || '#4cc9ff', css.getPropertyValue('--survey-2').trim() || '#c77dff', css.getPropertyValue('--survey-3').trim() || '#ffb347'];
+  const passHex = SURVEY.map((hex, k) => css.getPropertyValue(`--survey-${k}`).trim() || hex);
   const passCols = new Float32Array(passHex.flatMap(hexToRgb));
   // Commissioning reads as a dim grey.
   for (let i = 0; i < 3; i++) passCols[i] *= 0.7;
@@ -1400,8 +1403,8 @@ export function mountSkyView(root, { pointings: P, onPick = () => {}, onMode = (
       lines.push({ name: `grid${step}`, color: [0.92, 0.9, 0.85, 0.15], width: 1 });
       gridStep = step;
     }
-    if (layers.galactic) lines.push({ name: 'galactic', color: [0.78, 0.6, 1.0, 0.6], width: 1.4 });
-    if (layers.ecliptic) lines.push({ name: 'ecliptic', color: [1.0, 0.75, 0.45, 0.75], width: 1.4, dash: 3 });
+    if (layers.galactic) lines.push({ name: 'galactic', color: [...rgb01(ICE), 0.6], width: 1.4 });
+    if (layers.ecliptic) lines.push({ name: 'ecliptic', color: [...rgb01(SUNPATH), 0.75], width: 1.4, dash: 3 });
     if (layers.constellations) lines.push({ name: 'constellations', color: [0.95, 0.9, 0.8, 0.36], width: 1.1 });
     const builtEnd = Math.min(end, renderer.fpBuilt, renderer.cubeN || end);
     // From Earth, the "just observed" glow only means something on dates inside the survey.

@@ -5,9 +5,10 @@
 
 import { SURVEY_START_MJD, SURVEY_PERIOD } from '../data/survey.js';
 import { equatorialToEcliptic } from '../data/sky-math.js';
+import { SURVEY, NIGHT, PLATE, alpha } from './palette.js';
 
 const DURATION = 16000; // ms for the whole record
-const PASS_COLORS = ['rgba(150,160,190,0.3)', 'rgba(76,201,255,0.26)', 'rgba(199,125,255,0.26)', 'rgba(255,179,71,0.3)'];
+const PASS_COLORS = SURVEY.map((c, k) => alpha(c, k === 2 ? 0.32 : 0.26));
 const passOf = (mjd) => (mjd < SURVEY_START_MJD ? 0 : Math.min(3, 1 + Math.floor((mjd - SURVEY_START_MJD) / SURVEY_PERIOD)));
 const fmt = (mjd) => new Date((mjd - 40587) * 864e5).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
@@ -37,7 +38,7 @@ export function mountPaint(root, { P, stars, reduceMotion }) {
       <div><span class="label">Date</span><b class="paint-date mono">–</b></div>
       <div><span class="label">Pointings</span><b class="paint-count mono">0</b></div>
       <div class="paint-legend">
-        <span style="--c:#4cc9ff">Survey 1</span><span style="--c:#c77dff">Survey 2</span><span style="--c:#ffb347">Survey 3</span>
+        <span style="--c:${SURVEY[1]}">Survey 1</span><span style="--c:${SURVEY[2]}">Survey 2</span><span style="--c:${SURVEY[3]}">Survey 3</span>
       </div>
       <button class="btn paint-replay" type="button">Replay</button>
     </div>`;
@@ -84,10 +85,10 @@ export function mountPaint(root, { P, stars, reduceMotion }) {
     bctx.save();
     bctx.beginPath();
     bctx.ellipse(w / 2, h / 2, w / 2.05, h / 2.05, 0, 0, 2 * Math.PI);
-    bctx.fillStyle = 'rgba(8,11,23,0.85)';
+    bctx.fillStyle = alpha(NIGHT[0], 0.9);
     bctx.fill();
     bctx.clip();
-    bctx.strokeStyle = 'rgba(140,160,255,0.08)';
+    bctx.strokeStyle = alpha(PLATE[0], 0.07);
     bctx.lineWidth = 1;
     for (let lat = -60; lat <= 60; lat += 30) {
       bctx.beginPath();
@@ -106,7 +107,7 @@ export function mountPaint(root, { P, stars, reduceMotion }) {
       bctx.stroke();
     }
     // The ecliptic itself.
-    bctx.strokeStyle = 'rgba(255,214,90,0.35)';
+    bctx.strokeStyle = alpha(PLATE[0], 0.32);
     bctx.setLineDash([3, 5]);
     bctx.beginPath();
     bctx.moveTo(w / 2 - w / 2.05, h / 2);
@@ -114,7 +115,7 @@ export function mountPaint(root, { P, stars, reduceMotion }) {
     bctx.stroke();
     bctx.setLineDash([]);
     // Real naked-eye stars for reference.
-    bctx.fillStyle = '#dfe6ff';
+    bctx.fillStyle = PLATE[0];
     for (const [ra, dec, mag] of stars) {
       if (!(mag < 4.6)) continue;
       const [lon, lat] = equatorialToEcliptic(ra, dec);
@@ -125,7 +126,7 @@ export function mountPaint(root, { P, stars, reduceMotion }) {
     }
     bctx.globalAlpha = 1;
     bctx.restore();
-    bctx.strokeStyle = 'rgba(140,160,255,0.25)';
+    bctx.strokeStyle = alpha(PLATE[0], 0.22);
     bctx.beginPath();
     bctx.ellipse(w / 2, h / 2, w / 2.05, h / 2.05, 0, 0, 2 * Math.PI);
     bctx.stroke();

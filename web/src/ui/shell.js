@@ -68,7 +68,7 @@ export function createShell(app) {
         </div>
         <div class="stories-list">
           ${STORIES.map(
-            (s, i) => `<button class="story${i === 0 ? ' first' : ''}" data-story="${s.id}" style="--accent:${s.accent}">
+            (s, i) => `<button class="story${i === 0 ? ' first' : ''}" data-story="${s.id}">
               ${i === 0 ? '<span class="story-start">Start here</span>' : ''}
               <span class="story-kicker">${s.kicker}</span>
               <span class="story-title">${s.title}</span>

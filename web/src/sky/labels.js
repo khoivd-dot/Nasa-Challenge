@@ -3,16 +3,17 @@
 // the ground view also the compass points, the Sun, the Moon and the planets.
 
 import { radecToVec, eclipticToEquatorial, galacticToEquatorial } from '../data/sky-math.js';
+import { SODIUM, PLATE, NIGHT, ICE, SUNPATH, alpha } from '../ui/palette.js';
 
 const FONT = '"Archivo Variable", system-ui, sans-serif';
 const DEG = Math.PI / 180;
-// Canvas colors, matching the tokens in base.css.
 const PAL = {
-  accent: '#ffb23e',
-  text2: 'rgba(235, 230, 217, 0.72)',
-  tickMajor: 'rgba(235, 230, 217, 0.42)',
-  tickMinor: 'rgba(235, 230, 217, 0.2)',
+  accent: SODIUM.base,
+  text2: PLATE[1],
+  tickMajor: alpha(PLATE[0], 0.42),
+  tickMinor: alpha(PLATE[0], 0.2),
 };
+const paper = (a) => alpha(PLATE[0], a);
 const MONO = '"Overpass Mono", ui-monospace, monospace';
 
 // Sample points along the two reference great circles, once.
@@ -51,15 +52,15 @@ export function drawOverlay(ctx, cam, o) {
       const text = name.toUpperCase();
       const w = ctx.measureText(text).width / 2;
       if (!free(p.x - w, p.y - 7, p.x + w, p.y + 7)) continue;
-      ctx.fillStyle = `rgba(178, 192, 240, ${0.62 * p.vis})`;
+      ctx.fillStyle = paper(0.55 * p.vis);
       ctx.fillText(text, p.x, p.y);
     }
     if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
   }
 
   const taken = [];
-  if (o.galactic) curveLabel(ctx, cam, GAL, 'Galactic plane', 'rgba(205, 160, 255, 0.85)', inView, taken);
-  if (o.ecliptic) curveLabel(ctx, cam, ECL, 'Ecliptic', 'rgba(255, 196, 120, 0.85)', inView, taken);
+  if (o.galactic) curveLabel(ctx, cam, GAL, 'Galactic plane', alpha(ICE, 0.85), inView, taken);
+  if (o.ecliptic) curveLabel(ctx, cam, ECL, 'Ecliptic', alpha(SUNPATH, 0.9), inView, taken);
 
   if (o.footprints) {
     ctx.font = `500 11px ${FONT}`;
@@ -73,7 +74,7 @@ export function drawOverlay(ctx, cam, o) {
       if (p.vis < 0.5 || !inView(p, 20)) continue;
       const a = p.vis * 0.9;
       const r = Math.max(10, Math.min(60, (cam.R * 5 * Math.PI) / 180 * (1 - cam.morph) + cam.S * 0.09 * cam.morph));
-      ctx.strokeStyle = `rgba(255, 255, 255, ${0.35 * a})`;
+      ctx.strokeStyle = paper(0.35 * a);
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 4]);
       ctx.beginPath();
@@ -95,7 +96,7 @@ export function drawOverlay(ctx, cam, o) {
       ctx.moveTo(p.x + side * r * 0.71, p.y - r * 0.71);
       ctx.lineTo(p.x + side * (r * 0.71 + 14), ly);
       ctx.stroke();
-      ctx.fillStyle = `rgba(232, 236, 255, ${a})`;
+      ctx.fillStyle = paper(a);
       ctx.textAlign = side > 0 ? 'left' : 'right';
       shadowText(ctx, label, p.x + side * (r * 0.71 + 18), ly);
     }
@@ -106,7 +107,7 @@ export function drawOverlay(ctx, cam, o) {
     if (p.vis > 0.3 && inView(p, -20)) {
       const t = o.reticle.phase;
       const a = p.vis;
-      ctx.strokeStyle = `rgba(255, 255, 255, ${0.9 * a})`;
+      ctx.strokeStyle = paper(0.9 * a);
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
@@ -118,14 +119,14 @@ export function drawOverlay(ctx, cam, o) {
         ctx.lineTo(p.x + Math.cos(ang) * 14, p.y + Math.sin(ang) * 14);
         ctx.stroke();
       }
-      ctx.strokeStyle = `rgba(255, 178, 62, ${(1 - t) * 0.8 * a})`;
+      ctx.strokeStyle = alpha(SODIUM.base, (1 - t) * 0.8 * a);
       ctx.beginPath();
       ctx.arc(p.x, p.y, 8 + t * 22, 0, Math.PI * 2);
       ctx.stroke();
       ctx.font = `600 10px ${MONO}`;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = `rgba(232, 236, 255, ${0.9 * a})`;
+      ctx.fillStyle = paper(0.9 * a);
       if (free(p.x + 16, p.y - 7, p.x + 72, p.y + 7)) shadowText(ctx, 'SPHEREx', p.x + 18, p.y);
     }
   }
@@ -209,13 +210,13 @@ function drawGround(ctx, cam, o, g, free) {
     const w = ctx.measureText(text).width / 2 + 2;
     const y = p.y + 9;
     if (!free(p.x - w, y - 2, p.x + w, y + 18)) continue;
-    ctx.strokeStyle = 'rgba(220, 228, 255, 0.45)';
+    ctx.strokeStyle = paper(0.45);
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(p.x, p.y + 1);
     ctx.lineTo(p.x, p.y + 6);
     ctx.stroke();
-    ctx.fillStyle = k === 0 ? 'rgba(255, 150, 130, 0.95)' : `rgba(222, 230, 255, ${main ? 0.9 : 0.6})`;
+    ctx.fillStyle = k === 0 ? SODIUM.base : paper(main ? 0.9 : 0.6);
     ctx.fillText(text, p.x, y);
   }
 
@@ -315,7 +316,7 @@ function drawMoon(ctx, cam, p, r, moon, sun, a) {
 
 function shadowText(ctx, text, x, y) {
   const fill = ctx.fillStyle;
-  ctx.fillStyle = 'rgba(2, 4, 12, 0.75)';
+  ctx.fillStyle = alpha(NIGHT[0], 0.75);
   ctx.fillText(text, x + 1, y + 1);
   ctx.fillStyle = fill;
   ctx.fillText(text, x, y);
@@ -342,7 +343,7 @@ function drawGridLabels(ctx, cam, o, inView) {
   for (let ra = 0; ra < 360; ra += sRa) {
     const p = cam.projectRaDec(ra, decLab);
     if (p.vis < 0.5 || !inView(p, 12)) continue;
-    ctx.fillStyle = `rgba(150, 170, 230, ${0.75 * p.vis})`;
+    ctx.fillStyle = alpha(PLATE[1], 0.75 * p.vis);
     shadowText(ctx, fmtRa(ra, sRa), p.x + 3, p.y - 2);
   }
   ctx.textBaseline = 'top';
@@ -350,7 +351,7 @@ function drawGridLabels(ctx, cam, o, inView) {
     if (Math.abs(dec - decLab) < 1e-6) continue;
     const p = cam.projectRaDec(raLab, dec);
     if (p.vis < 0.5 || !inView(p, 12)) continue;
-    ctx.fillStyle = `rgba(150, 170, 230, ${0.75 * p.vis})`;
+    ctx.fillStyle = alpha(PLATE[1], 0.75 * p.vis);
     shadowText(ctx, `${dec > 0 ? '+' : dec < 0 ? '−' : ''}${Math.abs(dec)}°`, p.x + 3, p.y + 2);
   }
 }
