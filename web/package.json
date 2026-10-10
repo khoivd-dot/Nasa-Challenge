@@ -12,9 +12,9 @@
     "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
-    "@fontsource/inter": "^5.3.0",
-    "@fontsource/jetbrains-mono": "^5.3.0",
-    "@fontsource/space-grotesk": "^5.3.0",
+    "@fontsource-variable/archivo": "^5.3.0",
+    "@fontsource-variable/atkinson-hyperlegible-next": "^5.3.0",
+    "@fontsource/overpass-mono": "^5.2.5",
     "astronomy-engine": "^2.1.19"
   },
   "devDependencies": {

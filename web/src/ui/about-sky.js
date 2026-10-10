@@ -128,11 +128,11 @@ export function createAboutSky(canvas, { reduceMotion = false } = {}) {
         // Zoom from the resting field to a sliver: stars rush outward.
         const k = ease(t);
         fov = FOV * Math.exp(Math.log(1 / 70) * k);
-        streak = FOV * Math.exp(Math.log(1 / 70) * ease(Math.max(0, t - 0.16)));
+        streak = FOV * Math.exp(Math.log(1 / 70) * ease(Math.max(0, t - 0.22)));
         if (t >= 1) {
           warp.resolve();
           ra0 = (ra0 + 70) % 360;
-          warp = { ...warp, t0: now, dur: 900, phase: 'out' };
+          warp = { ...warp, t0: now, dur: 600, phase: 'out' };
         }
       } else {
         // Drop out of hyperspace somewhere new: the field opens back up.
@@ -188,7 +188,7 @@ export function createAboutSky(canvas, { reduceMotion = false } = {}) {
       if (warp) return warp.promise;
       let resolve;
       const promise = new Promise((r) => (resolve = r));
-      warp = { t0: performance.now(), dur: 1250, phase: 'in', resolve, promise, done: () => {} };
+      warp = { t0: performance.now(), dur: 700, phase: 'in', resolve, promise, done: () => {} };
       return promise;
     },
     destroy() {

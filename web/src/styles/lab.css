@@ -21,7 +21,7 @@
 .lab-inspect {
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(140, 160, 255, 0.25) transparent;
+  scrollbar-color: rgba(235, 230, 217, 0.2) transparent;
 }
 .lab-side-scroll {
   padding: 16px;
@@ -58,9 +58,10 @@
 .lab-tip {
   font-size: 13px;
   color: var(--text);
-  background: rgba(92, 225, 255, 0.07);
-  border: 1px solid rgba(92, 225, 255, 0.2);
-  border-radius: var(--radius-sm);
+  background: rgba(255, 178, 62, 0.06);
+  border: 0;
+  border-left: 2px solid var(--accent);
+  border-radius: 0;
   padding: 8px 10px;
   margin: 0 0 6px;
 }
@@ -89,7 +90,7 @@
   border: 0;
   background: transparent;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 2px;
   cursor: pointer;
   font-size: 13.5px;
 }
@@ -122,7 +123,7 @@
   border: 1px solid transparent;
   background: rgba(255, 255, 255, 0.025);
   padding: 7px 10px;
-  border-radius: 9px;
+  border-radius: 2px;
   cursor: pointer;
   font-size: 13px;
   transition: background 0.2s var(--ease), border-color 0.2s var(--ease);
@@ -131,8 +132,8 @@
   background: rgba(255, 255, 255, 0.06);
 }
 .lab-pass.on {
-  border-color: rgba(92, 225, 255, 0.45);
-  background: rgba(92, 225, 255, 0.08);
+  border-color: var(--accent);
+  background: rgba(255, 178, 62, 0.08);
 }
 .lab-pass .dot {
   width: 10px;
@@ -266,23 +267,23 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(10, 14, 30, 0.75);
+  padding: 4px 9px;
+  border-radius: 2px;
+  background: rgba(8, 9, 11, 0.86);
   border: 1px solid var(--panel-border-strong);
 }
 .lab-legend {
   width: 210px;
-  background: rgba(10, 14, 30, 0.75);
+  background: rgba(8, 9, 11, 0.86);
   border: 1px solid var(--panel-border);
-  border-radius: 10px;
+  border-radius: 2px;
   padding: 8px 10px;
   font-family: var(--font-body);
   font-size: 11px;
 }
 .lab-legend-bar {
   height: 6px;
-  border-radius: 6px;
+  border-radius: 1px;
 }
 .lab-legend-ends {
   display: flex;
@@ -296,9 +297,9 @@
   display: flex;
   gap: 6px;
   align-items: center;
-  background: rgba(10, 14, 30, 0.75);
+  background: rgba(8, 9, 11, 0.86);
   padding: 4px 10px;
-  border-radius: 999px;
+  border-radius: 2px;
 }
 .lab-diff-legend i {
   width: 10px;
@@ -411,7 +412,7 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  border: 2px solid rgba(92, 225, 255, 0.15);
+  border: 2px solid rgba(255, 178, 62, 0.15);
   border-top-color: var(--accent);
   display: none;
 }
@@ -466,7 +467,7 @@
 .lab-seg-rail {
   position: relative;
   height: 24px;
-  border-radius: 12px;
+  border-radius: 2px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--panel-border);
   margin: 0 6px;

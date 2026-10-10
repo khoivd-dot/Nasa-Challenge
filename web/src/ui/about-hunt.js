@@ -37,7 +37,7 @@ const DISGUISE_MAG = 3.6;
 
 const fmtDate = (t) => new Date(t).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
-export function mountHunt(root, { stars, go, reduceMotion }) {
+export function mountHunt(root, { stars, reduceMotion }) {
   root.innerHTML = `
     <div class="hunt-top">
       <div class="hunt-levels" aria-label="Rounds">${LEVELS.map((l, i) => `<span data-i="${i}"><i></i>Round ${i + 1}</span>`).join('')}</div>

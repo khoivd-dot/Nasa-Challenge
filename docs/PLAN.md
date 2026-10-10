@@ -17,6 +17,7 @@ In 1930 Clyde Tombaugh found Pluto, the original "Planet X", with a **blink comp
    - **Measure**: Shift-click an object in two frames to get its speed.
 3. **Stories.** Guided starts that are verified to show real change: Pluto crawling across fixed stars, Neptune, Uranus, Barnard's Star's proper motion, the Luhman 16 brown dwarfs, the north ecliptic pole deep field, and Orion in infrared.
 4. **From Earth.** The same map as the night sky seen from where you stand: pick a city (guessed from the browser's time zone, no permission needed) or use the device location, then drag through the night on a slider shaded by the Sun's altitude. Shows the horizon, compass points, twilight or daylight, the Sun, the Moon with its phase, the planets and Pluto, and SPHEREx coverage up to that date. Tap a planet to follow it in the Lab. Link: `#/earth`.
+5. **About, as something to play with.** An opening crawl tells the Tombaugh story over the real naked-eye sky, then a jump to hyperspace drawn with real stars. Below it: a blink-comparator game (find Mars, Jupiter and Uranus between two dates, positions from Astronomy Engine), all 92,069 pointings replayed as SPHEREx paints the sky, and a slider across SPHEREx's 102 colors. The site-wide look is in [DESIGN.md](DESIGN.md).
 
 ## Data strategy (verified in this session)
 

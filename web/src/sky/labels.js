@@ -4,8 +4,8 @@
 
 import { radecToVec, eclipticToEquatorial, galacticToEquatorial } from '../data/sky-math.js';
 
-const FONT = '"Inter", system-ui, sans-serif';
-const MONO = '"JetBrains Mono", ui-monospace, monospace';
+const FONT = '"Archivo Variable", system-ui, sans-serif';
+const MONO = '"Overpass Mono", ui-monospace, monospace';
 
 // Sample points along the two reference great circles, once.
 const ECL = [];
@@ -109,7 +109,7 @@ export function drawOverlay(ctx, cam, o) {
         ctx.lineTo(p.x + Math.cos(ang) * 14, p.y + Math.sin(ang) * 14);
         ctx.stroke();
       }
-      ctx.strokeStyle = `rgba(92, 225, 255, ${(1 - t) * 0.8 * a})`;
+      ctx.strokeStyle = `rgba(255, 178, 62, ${(1 - t) * 0.8 * a})`;
       ctx.beginPath();
       ctx.arc(p.x, p.y, 8 + t * 22, 0, Math.PI * 2);
       ctx.stroke();
