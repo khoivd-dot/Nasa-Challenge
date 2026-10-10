@@ -143,6 +143,23 @@
   background: rgba(255, 178, 62, 0.1);
 }
 
+.top-clock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+.top-clock .dsky {
+  font-size: 14px;
+  padding: 4px 9px 3px;
+}
+.top-clock .dsky::before {
+  top: 4px;
+}
+
 .views {
   position: relative;
   flex: 1;
@@ -156,19 +173,21 @@
   display: none;
 }
 
-/* Stories panel floating over the sky map */
+/* Stories: a rail docked on the left of the sky map. */
 .stories {
   position: absolute;
   z-index: 10;
-  top: 16px;
-  left: 16px;
-  bottom: 16px;
-  width: 348px;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: min(380px, 40%);
   display: flex;
   flex-direction: column;
-  padding: 22px 18px 14px;
+  padding: 24px 22px 12px;
   overflow: hidden;
-  transition: transform 0.45s var(--ease), opacity 0.3s var(--ease);
+  border-width: 0 1px 0 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 .stories-head .label {
   padding-right: 52px;
@@ -287,23 +306,30 @@
   font-size: 12px;
   padding: 0 10px;
 }
+/* Folded, the rail is a narrow tab with the word "Stories" running up it. */
 .stories.collapsed {
-  bottom: auto;
-  width: auto;
+  width: 44px;
   padding: 0;
-  background: transparent;
-  border: 0;
-  box-shadow: none;
-  backdrop-filter: none;
 }
 .stories.collapsed > :not(.stories-toggle) {
   display: none;
 }
 .stories.collapsed .stories-toggle {
-  position: static;
-  background: var(--panel);
+  top: 12px;
+  left: 6px;
+  right: auto;
+  width: 32px;
+  height: auto;
+  padding: 12px 0;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
 }
 
+@media (max-width: 1100px) {
+  .top-clock {
+    display: none;
+  }
+}
 @media (max-width: 900px) {
   .brand-tag {
     display: none;
@@ -325,6 +351,8 @@
     width: auto;
     flex: 1;
   }
+  /* Phones: a sheet over the bottom of the map. Inset from the edges: flush
+     to them, headless Chrome stopped drawing the sky above it. */
   .stories {
     top: auto;
     left: 8px;
@@ -333,13 +361,28 @@
     width: auto;
     max-height: 62%;
     padding: 16px 14px 10px;
+    border-width: 1px;
+    border-radius: var(--radius);
     /* Solid, so the sky controls underneath do not show through the text. */
     background: var(--grain), var(--panel-solid);
   }
   .stories.collapsed {
     top: 8px;
+    left: 8px;
     right: auto;
     bottom: auto;
+    width: auto;
+    background: transparent;
+    border: 0;
+  }
+  .stories.collapsed .stories-toggle {
+    position: static;
+    width: auto;
+    padding: 0 10px;
+    height: 36px;
+    writing-mode: horizontal-tb;
+    transform: none;
+    background: var(--panel-solid);
   }
   .stories-head h1 {
     font-size: 22px;

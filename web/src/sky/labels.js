@@ -5,6 +5,14 @@
 import { radecToVec, eclipticToEquatorial, galacticToEquatorial } from '../data/sky-math.js';
 
 const FONT = '"Archivo Variable", system-ui, sans-serif';
+const DEG = Math.PI / 180;
+// Canvas colors, matching the tokens in base.css.
+const PAL = {
+  accent: '#ffb23e',
+  text2: 'rgba(235, 230, 217, 0.72)',
+  tickMajor: 'rgba(235, 230, 217, 0.42)',
+  tickMinor: 'rgba(235, 230, 217, 0.2)',
+};
 const MONO = '"Overpass Mono", ui-monospace, monospace';
 
 // Sample points along the two reference great circles, once.
@@ -26,6 +34,7 @@ export function drawOverlay(ctx, cam, o) {
   const free = (x0, y0, x1, y1) =>
     x0 > o.x0 && x1 < W && y0 > 0 && y1 < H && !avoid.some((r) => x1 > r.x0 && x0 < r.x1 && y1 > r.y0 && y0 < r.y1);
 
+  if (o.bezel) drawBezel(ctx, cam, o);
   if (o.grid) drawGridLabels(ctx, cam, o, inView);
 
   if (o.constellations && o.constLabels) {
@@ -122,6 +131,69 @@ export function drawOverlay(ctx, cam, o) {
   }
 
   if (o.ground) drawGround(ctx, cam, o, o.ground, free);
+}
+
+// A graduated bezel around the globe, like the setting circle of a telescope:
+// ticks every 5 degrees of position angle (north up, east left, as the sky is
+// seen from inside), cardinal letters, and an amber pointer to where SPHEREx
+// is looking right now. Fades out as the globe unrolls into the map.
+function drawBezel(ctx, cam, o) {
+  const a = 1 - Math.min(1, cam.morph * 3);
+  if (a <= 0.01) return;
+  const R = cam.R;
+  const { cx, cy } = cam;
+  // Skip when zoomed so far in that the ring is off screen anyway.
+  if (R > Math.hypot(o.W, o.H) * 1.5) return;
+  const r0 = R + 6;
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = PAL.tickMinor;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r0, 0, Math.PI * 2);
+  ctx.stroke();
+  // Position angle from north through east: north is up, east is to the left.
+  const at = (pa, r) => [cx - Math.sin(pa * DEG) * r, cy - Math.cos(pa * DEG) * r];
+  ctx.beginPath();
+  for (let pa = 0; pa < 360; pa += 5) {
+    if (pa % 90 === 0) continue;
+    const len = pa % 30 === 0 ? 8 : 4;
+    const [x0, y0] = at(pa, r0);
+    const [x1, y1] = at(pa, r0 + len);
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+  }
+  ctx.strokeStyle = PAL.tickMajor;
+  ctx.stroke();
+  ctx.font = `700 10px ${FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const [pa, t] of [
+    [0, 'N'],
+    [90, 'E'],
+    [180, 'S'],
+    [270, 'W'],
+  ]) {
+    const [x, y] = at(pa, r0 + 5);
+    ctx.fillStyle = pa === 0 ? PAL.accent : PAL.text2;
+    ctx.fillText(t, x, y + 0.5);
+  }
+  // SPHEREx's current pointing, projected onto the bezel.
+  if (o.reticle) {
+    const p = cam.project(o.reticle.v);
+    const ang = Math.atan2(p.y - cy, p.x - cx);
+    const r = r0 + 3;
+    ctx.translate(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r);
+    ctx.rotate(ang);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(9, -5);
+    ctx.lineTo(9, 5);
+    ctx.closePath();
+    ctx.fillStyle = PAL.accent;
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 // Compass points along the horizon, then the Sun, Moon and planets above it.

@@ -23,6 +23,16 @@
   --survey-1: #4cc9ff;
   --survey-2: #c77dff;
   --survey-3: #ffb347;
+  --raised: rgba(235, 230, 217, 0.07);
+  --line-2: #3a3f47;
+  --line-3: #666d76;
+  --tick-major: rgba(235, 230, 217, 0.42);
+  --tick-minor: rgba(235, 230, 217, 0.2);
+  --well: #050506;
+  --display: #ffb23e;
+  --display-glow: rgba(255, 178, 62, 0.45);
+  --display-off: rgba(255, 178, 62, 0.08);
+  --ramp-coverage: linear-gradient(90deg, rgba(235, 230, 217, 0.1), rgba(235, 230, 217, 0.45) 55%, #fff8ec);
   --radius: 3px;
   --radius-sm: 2px;
   --shadow: 0 14px 34px -14px rgba(0, 0, 0, 0.8);
@@ -111,6 +121,83 @@ a:hover {
   right: -1px;
   bottom: -1px;
   border-width: 0 2px 2px 0;
+}
+
+/* Registration frame around a viewport (the sky map, the Lab stage): amber
+   corner brackets, centre marks, and tick scales along the top and left
+   edges, like the stage of a plate-measuring machine. Overlay only. */
+.reg-frame {
+  position: absolute;
+  pointer-events: none;
+  --rb: 22px;
+  --rc: var(--accent);
+  background:
+    linear-gradient(var(--rc) 0 0) left top / var(--rb) 2px,
+    linear-gradient(var(--rc) 0 0) left top / 2px var(--rb),
+    linear-gradient(var(--rc) 0 0) right top / var(--rb) 2px,
+    linear-gradient(var(--rc) 0 0) right top / 2px var(--rb),
+    linear-gradient(var(--rc) 0 0) left bottom / var(--rb) 2px,
+    linear-gradient(var(--rc) 0 0) left bottom / 2px var(--rb),
+    linear-gradient(var(--rc) 0 0) right bottom / var(--rb) 2px,
+    linear-gradient(var(--rc) 0 0) right bottom / 2px var(--rb),
+    linear-gradient(var(--tick-major) 0 0) center top / 1px 14px,
+    linear-gradient(var(--tick-major) 0 0) center bottom / 1px 14px,
+    linear-gradient(var(--tick-major) 0 0) left center / 14px 1px,
+    linear-gradient(var(--tick-major) 0 0) right center / 14px 1px;
+  background-repeat: no-repeat;
+}
+.reg-frame::before,
+.reg-frame::after {
+  content: '';
+  position: absolute;
+}
+/* Minor ticks every 10 px, major every 50 px. */
+.reg-frame::before {
+  top: 0;
+  left: 44px;
+  right: 44px;
+  height: 9px;
+  background:
+    repeating-linear-gradient(90deg, var(--tick-major) 0 1px, transparent 1px 50px) 0 0 / 100% 9px no-repeat,
+    repeating-linear-gradient(90deg, var(--tick-minor) 0 1px, transparent 1px 10px) 0 0 / 100% 5px no-repeat;
+}
+.reg-frame::after {
+  left: 0;
+  top: 44px;
+  bottom: 44px;
+  width: 9px;
+  background:
+    repeating-linear-gradient(180deg, var(--tick-major) 0 1px, transparent 1px 50px) 0 0 / 9px 100% no-repeat,
+    repeating-linear-gradient(180deg, var(--tick-minor) 0 1px, transparent 1px 10px) 0 0 / 5px 100% no-repeat;
+}
+
+/* A display window for the one number that matters (a date, a time): lit
+   digits over their own unlit segments, like a vacuum-fluorescent readout.
+   Put the unlit pattern in data-ghost, e.g. "8888-88-88". */
+.dsky {
+  position: relative;
+  isolation: isolate;
+  display: inline-block;
+  padding: 3px 9px 2px;
+  border: 1px solid var(--line-2);
+  border-radius: 2px;
+  background: var(--well);
+  box-shadow: inset 0 1px 6px rgba(0, 0, 0, 0.7);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--display);
+  text-shadow: 0 0 9px var(--display-glow);
+  white-space: nowrap;
+}
+.dsky::before {
+  content: attr(data-ghost);
+  position: absolute;
+  z-index: -1;
+  left: 9px;
+  top: 3px;
+  color: var(--display-off);
+  text-shadow: none;
+  pointer-events: none;
 }
 
 .btn {

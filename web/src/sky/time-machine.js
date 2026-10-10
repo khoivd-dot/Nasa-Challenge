@@ -23,7 +23,7 @@ export function createTimeMachine(parent, { tMin, tMax, times, colors, onSeek, o
       <button class="btn icon primary sky-play" type="button" aria-label="Replay how SPHEREx scanned the sky">${ICON_PLAY}</button>
       <div class="sky-stat sky-stat-date">
         <span class="label">Date <span class="sky-utc">UTC</span></span>
-        <span class="mono sky-date">-</span>
+        <span class="dsky sky-date" data-ghost="8888-88-88 88:88">-</span>
       </div>
       <div class="sky-stat">
         <span class="label">Pointings</span>

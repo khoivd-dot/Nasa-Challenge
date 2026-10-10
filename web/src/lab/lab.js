@@ -163,6 +163,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
       <p class="lab-mode-hint" aria-live="polite"></p>
       <div class="lab-stage">
         <canvas class="lab-canvas" tabindex="0" aria-label="SPHEREx image viewer"></canvas>
+        <div class="lab-reg reg-frame" aria-hidden="true"></div>
         <div class="lab-hud lab-hud-tl mono"></div>
         <div class="lab-hud lab-hud-tr"></div>
         <div class="lab-hud lab-hud-bl mono"></div>
@@ -1041,7 +1042,7 @@ export function mountLab(root, { pointingsReady, onBack }) {
     const prev = list[S.cur - 1];
     const dt = prev ? fmtDelta((f.frame.mjd - prev.frame.mjd) * 24) : '—';
     // Wavelength and detector live in the "This frame" panel; the HUD speaks dates.
-    el.hudTL.innerHTML = `<b>${fmtDate(f.frame.mjd)}</b><br>${prev ? `${dt} after the last frame` : 'first visit'}`;
+    el.hudTL.innerHTML = `<b class="dsky" data-ghost="8888-88-88 88:88">${fmtDate(f.frame.mjd)}</b><span>${prev ? `${dt} after the last frame` : 'first visit'}</span>`;
     el.hudBL.textContent = `Frame ${S.cur + 1} / ${list.length}${S.mode === 'compare' ? ` · base ${S.base + 1}` : ''}`;
     const modeName = { blink: 'Blink', compare: { flip: 'Flip', swipe: 'Swipe', diff: 'Difference' }[S.cmp], trails: 'Trails', grid: 'Grid', deep: 'Deep' }[S.mode];
     el.modeHint.textContent = S.mode === 'compare' ? MODE_HINT.compare[S.cmp] : MODE_HINT[S.mode];

@@ -24,6 +24,7 @@ export function createShell(app) {
         <input class="text-input" type="search" placeholder="Search Pluto, Orion, or RA Dec" aria-label="Search the sky" autocomplete="off" />
         <div class="top-suggest glass" hidden></div>
       </div>
+      <div class="top-clock" title="Time now in UTC, the clock every SPHEREx date on this site uses" aria-hidden="true"><span>UTC</span><b class="dsky" data-ghost="88:88:88">--:--:--</b></div>
     </header>
     <main class="views">
       <section class="view" data-view="sky" hidden></section>
@@ -81,6 +82,8 @@ export function createShell(app) {
         panel.classList.toggle('collapsed', collapsed);
         toggle.textContent = collapsed ? 'Stories' : 'Hide';
         toggle.setAttribute('aria-expanded', String(!collapsed));
+        // The sky map re-centers on the space the rail leaves.
+        panel.dispatchEvent(new CustomEvent('stories-toggle', { bubbles: true }));
       };
       // Phones start with the panel open too: it is the only thing that says
       // what this is. "Hide" folds it to a small "Stories" button.
@@ -91,6 +94,14 @@ export function createShell(app) {
       });
     },
   };
+
+  // Live UTC clock in the top bar.
+  const clock = app.querySelector('.top-clock b');
+  const tick = () => {
+    clock.textContent = new Date().toISOString().slice(11, 19);
+  };
+  tick();
+  setInterval(tick, 1000);
 
   // Global search: named targets, solar-system bodies, or coordinates.
   const input = app.querySelector('.top-search input');

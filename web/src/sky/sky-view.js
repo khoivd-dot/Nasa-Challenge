@@ -320,7 +320,7 @@ export function mountSkyView(root, { pointings: P, onPick = () => {}, onMode = (
         <span class="label">Local time</span>
         <span class="sky-gwhen-line">
           <button type="button" class="sky-gstep" data-g="prev" aria-label="Previous night">${ICON.prev}</button>
-          <span class="mono sky-gtime">--:--</span>
+          <span class="dsky sky-gtime" data-ghost="88:88">--:--</span>
           <span class="sky-gday"></span>
           <button type="button" class="sky-gstep" data-g="next" aria-label="Next night">${ICON.next}</button>
         </span>

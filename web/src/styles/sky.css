@@ -37,27 +37,30 @@
   pointer-events: none;
 }
 
-/* ------------------------------------------------------ top-right HUD -- */
+/* -------------------------------------------- docked view-control strip -- */
+/* Desktop: the sky map is a console. Stories dock on the left, view controls
+   along the top, the time machine along the bottom, and the sky sits in a
+   framed viewport between them. */
 .sky-hud {
   position: absolute;
-  top: 16px;
-  right: 16px;
+  top: 0;
+  left: var(--sky-free-left);
+  right: 0;
   z-index: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 10px;
-  max-width: min(372px, calc(100% - var(--sky-free-left) - 32px));
   pointer-events: none;
 }
 .sky-hud > * {
   pointer-events: auto;
 }
 .sky-controls {
-  padding: 10px;
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 22px;
+  padding: 9px 18px;
+  border-width: 0 0 1px;
+  border-radius: 0;
+  box-shadow: none;
 }
 .sky-controls-top {
   display: flex;
@@ -70,14 +73,16 @@
 }
 .sky-layers {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 22px;
+  flex: 1;
+  min-width: 0;
 }
 .sky-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  max-width: 350px;
 }
 .sky-chip {
   display: inline-flex;
@@ -100,8 +105,8 @@
 }
 .sky-chip[aria-pressed='true'] {
   color: var(--text);
-  background: rgba(255, 255, 255, 0.075);
-  border-color: rgba(160, 180, 255, 0.34);
+  background: var(--raised);
+  border-color: var(--line-3);
 }
 .sky-chip:focus-visible {
   outline: 2px solid var(--accent);
@@ -116,21 +121,30 @@
 }
 .sky-chip[aria-pressed='true'] .sky-swatch {
   opacity: 1;
-  box-shadow: 0 0 8px rgba(160, 200, 255, 0.55);
+  box-shadow: 0 0 6px currentColor;
 }
+/* Desktop: the key sits in the frame's top-left corner, like a map key. */
 .sky-legend {
+  position: absolute;
+  top: calc(100% + 26px);
+  left: 32px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 4px;
-  font-size: 11px;
+  padding: 5px 9px;
+  border-radius: 2px;
+  background: rgba(8, 9, 11, 0.72);
+  font-family: var(--font-ui);
+  font-size: 11.5px;
   color: var(--text-3);
+  white-space: nowrap;
 }
+/* Brightness follows the number of visits; the hue says which survey. */
 .sky-legend-bar {
-  flex: 1;
-  height: 5px;
-  border-radius: 3px;
-  background: linear-gradient(90deg, rgba(76, 201, 255, 0.18), var(--survey-1) 35%, var(--survey-2) 65%, #fff8ec);
+  width: 110px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--ramp-coverage);
 }
 .sky-legend.off {
   display: none;
@@ -138,6 +152,9 @@
 
 /* ------------------------------------------------------------ readout -- */
 .sky-readout {
+  position: absolute;
+  top: calc(100% + 26px);
+  right: 30px;
   min-width: 236px;
   padding: 10px 13px 11px;
   opacity: 0;
@@ -183,13 +200,13 @@
 /* --------------------------------------------------------------- zoom -- */
 .sky-zoom {
   position: absolute;
-  right: 16px;
-  top: 50%;
+  right: 26px;
+  top: calc(var(--sky-top) + (100% - var(--sky-top) - var(--sky-bottom)) / 2);
   z-index: 2;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transform: translateY(-30%);
+  transform: translateY(-50%);
 }
 .sky-zoom .btn {
   background: var(--panel);
@@ -202,11 +219,13 @@
 /* ------------------------------------------------------- time machine -- */
 .sky-time {
   position: absolute;
-  bottom: 18px;
-  left: calc(var(--sky-free-left) + (100% - var(--sky-free-left)) / 2);
-  transform: translateX(-50%);
-  width: min(840px, calc(100% - var(--sky-free-left) - 40px));
-  padding: 12px 16px 6px;
+  bottom: 0;
+  left: var(--sky-free-left);
+  right: 0;
+  padding: 12px 22px 6px;
+  border-width: 1px 0 0;
+  border-radius: 0;
+  box-shadow: none;
   z-index: 2;
 }
 .sky-time-row {
@@ -233,8 +252,8 @@
   color: var(--text);
   white-space: nowrap;
 }
-.sky-stat-date .mono {
-  min-width: 15ch;
+.sky-stat-date {
+  gap: 3px;
 }
 .sky-utc {
   color: var(--text-3);
@@ -418,15 +437,32 @@
 
 /* ------------------------------------------------------ narrow layout -- */
 .sky-view.narrow .sky-hud {
-  top: 10px;
-  right: 10px;
-  left: 10px;
-  max-width: none;
+  top: 8px;
+  right: 8px;
+  left: 8px;
+  display: flex;
+  flex-direction: column;
   align-items: flex-end;
 }
 .sky-view.narrow .sky-controls {
+  flex-direction: column;
+  align-items: stretch;
   padding: 6px;
   gap: 8px;
+  border-width: 1px;
+  border-radius: var(--radius);
+}
+.sky-view.narrow .sky-layers {
+  flex-direction: column;
+  align-items: stretch;
+}
+.sky-view.narrow .sky-legend {
+  position: static;
+  padding: 0 4px;
+  background: none;
+}
+.sky-view.narrow .sky-legend-bar {
+  flex: 1;
 }
 .sky-view.narrow .sky-layers-toggle {
   display: inline-flex;
@@ -447,12 +483,9 @@
   display: none;
 }
 .sky-view.narrow .sky-time {
-  left: 8px;
-  right: 8px;
-  bottom: 8px;
-  width: auto;
-  transform: none;
-  padding: 9px 11px 4px;
+  left: 0;
+  right: 0;
+  padding: 9px 12px 4px;
 }
 .sky-view.narrow .sky-time-row {
   flex-wrap: wrap;
@@ -629,4 +662,141 @@
 .sky-view.narrow .sky-time-cap {
   margin-top: 6px;
   font-size: 11.5px;
+}
+
+/* ------------------------------------------------------ viewport frame -- */
+.sky-frame {
+  z-index: 1;
+  left: calc(var(--sky-free-left) + 12px);
+  right: 12px;
+  top: calc(var(--sky-top) + 12px);
+  bottom: calc(var(--sky-bottom) + 12px);
+}
+.sky-frame-data {
+  position: absolute;
+  left: 20px;
+  bottom: 12px;
+  display: flex;
+  gap: 18px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-2);
+  text-shadow: 0 1px 2px #000;
+}
+.sky-frame-data i {
+  font-style: normal;
+  font-family: var(--font-ui);
+  font-weight: 600;
+  color: var(--text-3);
+  margin-right: 6px;
+}
+.sky-frame-scan {
+  display: none;
+}
+.sky-view.narrow .sky-frame {
+  left: 8px;
+  right: 8px;
+  top: calc(var(--sky-top) + 4px);
+  bottom: calc(var(--sky-bottom) + 8px);
+  --rb: 16px;
+}
+.sky-view.narrow .sky-frame::before,
+.sky-view.narrow .sky-frame::after,
+.sky-view.narrow .sky-frame-data {
+  display: none;
+}
+
+/* The date window: the biggest number on the page. */
+.sky-time .dsky.sky-date {
+  font-size: 21px;
+  line-height: 1.25;
+}
+.sky-gbar .dsky.sky-gtime {
+  font-size: 19px;
+  line-height: 1.25;
+  min-width: 0;
+}
+.sky-view.narrow .sky-time .dsky.sky-date {
+  font-size: 15px;
+}
+.sky-view.narrow .sky-gbar .dsky.sky-gtime {
+  font-size: 15px;
+}
+
+/* --------------------------------------------------------------- boot -- */
+/* The first time the map appears, the panels unroll from their docks and one
+   scan line crosses the viewport. Reduced motion skips straight to the end. */
+.sky-boot .stories {
+  animation: boot-left 0.7s var(--ease) 0.05s backwards;
+}
+.sky-boot .sky-controls {
+  animation: boot-right 0.7s var(--ease) 0.25s backwards;
+}
+.sky-boot .sky-time {
+  animation: boot-up 0.7s var(--ease) 0.4s backwards;
+}
+.sky-boot .sky-frame {
+  animation: boot-frame 0.9s var(--ease) 0.55s backwards;
+}
+.sky-boot .sky-frame-scan {
+  display: block;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent) 20%, var(--accent) 80%, transparent);
+  box-shadow: 0 0 18px var(--display-glow);
+  opacity: 0;
+  animation: boot-scan 1.5s var(--ease) 0.8s;
+}
+@keyframes boot-left {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes boot-right {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes boot-up {
+  from {
+    clip-path: inset(100% 0 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes boot-frame {
+  from {
+    opacity: 0;
+    transform: scale(1.025);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes boot-scan {
+  0% {
+    top: 0;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 0.8;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
 }
